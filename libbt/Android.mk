@@ -1,5 +1,7 @@
 LOCAL_PATH := $(call my-dir)
 
+ifneq ($(BOARD_HAVE_BLUETOOTH_BCM),)
+
 include $(CLEAR_VARS)
 
 BDROID_DIR := $(TOP_DIR)external/bluetooth/bluedroid
@@ -40,3 +42,5 @@ endif
 ifeq ($(TARGET_PRODUCT), full_wingray)
     include $(LOCAL_PATH)/conf/moto/wingray/Android.mk
 endif
+
+endif # BOARD_HAVE_BLUETOOTH_BCM
