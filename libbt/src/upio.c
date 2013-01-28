@@ -32,7 +32,6 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <cutils/properties.h>
-#include <string.h>
 #include "bt_vendor_brcm.h"
 #include "upio.h"
 #include "userial_vendor.h"
@@ -96,9 +95,6 @@ static uint8_t upio_state[UPIO_MAX_COUNT];
 static int rfkill_id = -1;
 static int bt_emul_enable = 0;
 static char *rfkill_state_path = NULL;
-static const char *power_control_path = UPIO_BT_POWER_CTL_PATH;
-static const char *power_on = UPIO_BT_POWER_CTL_ON;
-static const char *power_off = UPIO_BT_POWER_CTL_OFF;
 
 /******************************************************************************
 **  Static functions
@@ -177,61 +173,6 @@ static int init_rfkill()
     }
 
     asprintf(&rfkill_state_path, "/sys/class/rfkill/rfkill%d/state", rfkill_id);
-    return 0;
-}
-
-static int init_power_control()
-{
-    char buf[16];
-    int fd, sz;
-
-    fd = open(power_control_path, O_RDONLY);
-    if (fd < 0) {
-        ALOGE("%s : open(%s) failed: %s (%d)\n",
-                        __func__, power_control_path, strerror(errno), errno);
-        return -1;
-    }
-
-    sz = read(fd, &buf, sizeof(buf));
-    close(fd);
-    if (!sz)
-        ALOGD("%s : power control state is %s\n", __func__, buf);
-
-    return 0;
-}
-
-static int set_power_control(const char *cmd)
-{
-    int fd, sz, ret = -1;
-    char buf[16];
-
-    fd = open(power_control_path, O_WRONLY);
-
-    ALOGW("set_bluetooth_power : trying with fd = %d, cmd = %s, count = %d\n",
-            fd, cmd, strlen(cmd));
-
-    if (fd < 0) {
-        ALOGE("set_bluetooth_power : open(%s) for write failed: %s (%d)",
-            power_control_path, strerror(errno), errno);
-        return ret;
-    }
-
-    sz = write(fd, cmd, strlen(cmd));
-    close(fd);
-
-    if (sz < 0) {
-        ALOGE("set_bluetooth_power : write(%s) failed: %s (%d)\n",
-            power_control_path, strerror(errno), errno);
-        ALOGE("set_bluetooth_power : fd = %d, cmd = %s, count = %d\n",
-            fd, cmd, strlen(cmd));
-        return ret;
-    }
-
-    fd = open(power_control_path, O_RDONLY);
-    sz = read(fd, &buf, sizeof(buf));
-    ALOGW("set_bluetooth_power : read %s", buf);
-    close(fd);
-
     return 0;
 }
 
@@ -347,20 +288,6 @@ int upio_set_bluetooth_power(int on)
             return ret;
     }
 
-    /* check power control interface too */
-    if (init_power_control())
-        return ret;
-
-    /*
-     * If we're powering on Bluetooth, we have to switch the runtime_pm to ON
-     * before starting the rfkill command
-     */
-    if (on == UPIO_BT_POWER_ON) {
-        ret = set_power_control(power_on);
-        if (ret)
-            return ret;
-    }
-
     fd = open(rfkill_state_path, O_WRONLY);
 
     if (fd < 0)
@@ -381,16 +308,6 @@ int upio_set_bluetooth_power(int on)
 
     if (fd >= 0)
         close(fd);
-
-    /*
-     * If we're powering off Bluetooth, we have to switch the runtime_pm to AUTO
-     * after having executed the rfkill command
-     */
-    if (on == UPIO_BT_POWER_OFF) {
-        ret = set_power_control(power_off);
-        if (ret)
-            return ret;
-    }
 
     return ret;
 }

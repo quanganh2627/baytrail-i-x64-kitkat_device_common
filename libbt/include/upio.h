@@ -33,9 +33,6 @@
 
 #define UPIO_BT_POWER_OFF 0
 #define UPIO_BT_POWER_ON  1
-#define UPIO_BT_POWER_CTL_OFF   "auto"
-#define UPIO_BT_POWER_CTL_ON    "on"
-#define UPIO_BT_POWER_CTL_PATH  "/sys/devices/pci0000:00/0000:00:05.0/power/control"
 
 /* UPIO signals */
 enum {
