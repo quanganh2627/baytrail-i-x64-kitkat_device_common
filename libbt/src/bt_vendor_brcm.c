@@ -31,6 +31,8 @@
 #include "upio.h"
 #include "userial_vendor.h"
 
+#define BTVND_DBG TRUE
+
 #ifndef BTVND_DBG
 #define BTVND_DBG FALSE
 #endif
@@ -147,14 +149,20 @@ static int op(bt_vendor_opcode_t opcode, void *param)
 
         case BT_VND_OP_FW_CFG:
             {
+                ALOGW("BT_VND_OP_FW_CFG");
+                ALOGW("Skipping into hw_config_start().");
                 hw_config_start();
+                //bt_vendor_cbacks->fwcfg_cb(BT_VND_OP_RESULT_SUCCESS);
             }
             break;
 
         case BT_VND_OP_SCO_CFG:
             {
 #if (SCO_CFG_INCLUDED == TRUE)
-                hw_sco_config();
+                ALOGI("hw_sco_config Skipping");
+                //hw_sco_config();
+
+                bt_vendor_cbacks->scocfg_cb(BT_VND_OP_RESULT_SUCCESS);
 #else
                 retval = -1;
 #endif
@@ -193,7 +201,8 @@ static int op(bt_vendor_opcode_t opcode, void *param)
         case BT_VND_OP_LPM_SET_MODE:
             {
                 uint8_t *mode = (uint8_t *) param;
-                retval = hw_lpm_enable(*mode);
+                //retval = hw_lpm_enable(*mode);
+                bt_vendor_cbacks->lpm_cb(BT_VND_OP_RESULT_SUCCESS);
             }
             break;
 
@@ -203,7 +212,7 @@ static int op(bt_vendor_opcode_t opcode, void *param)
                 uint8_t wake_assert = (*state == BT_VND_LPM_WAKE_ASSERT) ? \
                                         TRUE : FALSE;
 
-                hw_lpm_set_wake_state(wake_assert);
+                //hw_lpm_set_wake_state(wake_assert);
             }
             break;
 
