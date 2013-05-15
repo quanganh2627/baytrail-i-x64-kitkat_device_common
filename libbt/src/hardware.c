@@ -835,6 +835,7 @@ void hw_config_cback(void *p_mem)
                 {
                     uint16_t    lmp_subversion;
                     uint8_t     *p_lmp;
+                    char tmp[5];
 
                     p_lmp = (uint8_t *) (p_evt_buf + 1) + HCI_EVT_CMD_CMPL_LOCAL_REVISION;
                     STREAM_TO_UINT16(lmp_subversion, p_lmp);
@@ -854,7 +855,10 @@ void hw_config_cback(void *p_mem)
                         if (lmp_subversion == 0x4406)
                             hw_cfg_cb.local_chip_name[9] = '3';
                     }
-                }
+
+                    snprintf(tmp, sizeof(tmp), "%04x", lmp_subversion);
+                    lct_log(CT_EV_INFO, "cws.bt", "fw_version", 0, hw_cfg_cb.local_chip_name, tmp);
+                 }
                 /* fall through intentionally */
 
             case HW_CFG_CHECK_LOCAL_NAME:
