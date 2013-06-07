@@ -811,10 +811,9 @@ void hw_config_cback(void *p_mem)
                 hw_cfg_cb.local_chip_name[LOCAL_NAME_BUFFER_LEN-1] = 0;
 
                 /* Additional check for revision if chip is BCM4335 */
-                if ( (strstr(hw_cfg_cb.local_chip_name, "BCM4335") != NULL) ||
-                    (strstr(hw_cfg_cb.local_chip_name, "BCM43241") != NULL) )
+                if (strstr(hw_cfg_cb.local_chip_name, "BCM4335") != NULL)
                 {
-                    ALOGI("bt vendor lib: %s chip detected, needs to check for the lmp version...", hw_cfg_cb.local_chip_name);
+                    ALOGI("bt vendor lib: BCM4335 chip detected, needs to check for the lmp version...");
 
                     /* read local revision to check lmp version to differentiate between A0 and B0 revision of BCM4335 */
                     UINT16_TO_STREAM(p, HCI_READ_LOCAL_VERSION_INFORMATION);
@@ -840,20 +839,10 @@ void hw_config_cback(void *p_mem)
                     p_lmp = (uint8_t *) (p_evt_buf + 1) + HCI_EVT_CMD_CMPL_LOCAL_REVISION;
                     STREAM_TO_UINT16(lmp_subversion, p_lmp);
                     ALOGI("bt vendor lib: lmp version : %04x.", lmp_subversion);
-                    if (strstr(hw_cfg_cb.local_chip_name, "BCM4335") != NULL)
+                    if (lmp_subversion == 0x4106)
                     {
-                        if (lmp_subversion == 0x4106)
-                        {
-                            /* Found BCM4335B0 revision */
-                            hw_cfg_cb.local_chip_name[7] = 'B';
-                        }
-                    }
-                    if (strstr(hw_cfg_cb.local_chip_name, "BCM43241") != NULL)
-                    {
-                        /* Found BCM43241B3/B4 revision */
-                        /* HCD file still labelled as BCM43241B3, so set accordingly */
-                        if (lmp_subversion == 0x4406)
-                            hw_cfg_cb.local_chip_name[9] = '3';
+                        /* Found BCM4335B0 revision */
+                        hw_cfg_cb.local_chip_name[7] = 'B';
                     }
 
                     snprintf(tmp, sizeof(tmp), "%04x", lmp_subversion);
