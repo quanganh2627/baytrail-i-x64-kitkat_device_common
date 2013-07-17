@@ -6,113 +6,11 @@
 #include <termios.h> // POSIX terminal control definitionss
 #include <time.h>   // time calls
 #include <stdlib.h>
-#include "serial.h"
 #include <sys/ioctl.h>
-
-int serial_setbaud(int fd, int baudrate)
-{
-    struct termios tios;
-    struct serial_struct ser;
-
-    int baudratecode=serial_translate_baud(baudrate);
-
-    if (baudratecode>0)
-    {
-        printf("IF. baudratecode:%u\n",baudratecode);
-        tcgetattr(fd, &tios);
-#if 1
-        cfsetispeed(&tios, baudratecode);
-        cfsetospeed(&tios, baudratecode);
-        tcflush(fd, TCIFLUSH);
-        tcsetattr(fd, TCSANOW, &tios);
-#endif
-        ioctl(fd, TIOCGSERIAL, &ser);
-        ser.flags=(ser.flags&(~ASYNC_SPD_MASK));
-        ser.custom_divisor=1;
-
-        ioctl(fd, TIOCSSERIAL, &ser);
-    }
-    else
-    {
-#ifdef SUPPORT_HISPEED
-        //      printf("Setting custom divisor\n");
-
-        if (tcgetattr(fd, &tios))
-            perror("tcgetattr");
-
-        cfsetispeed(&tios, B38400);
-        cfsetospeed(&tios, B38400);
-        tcflush(fd, TCIFLUSH);
-
-        if (tcsetattr(fd, TCSANOW, &tios))
-            perror("tcsetattr");
-
-        if (ioctl(fd, TIOCGSERIAL, &ser))
-            perror("ioctl TIOCGSERIAL");
-
-        ser.flags=(ser.flags&(~ASYNC_SPD_MASK)) | ASYNC_SPD_CUST;
-        ser.custom_divisor=48;
-        ser.custom_divisor=ser.baud_base/baudrate;
-        ser.reserved_char[0]=0; // what the hell does this do?
-
-        //      printf("baud_base %i\ndivisor %i\n", ser.baud_base,ser.custom_divisor);
-
-        if (ioctl(fd, TIOCSSERIAL, &ser))
-            perror("ioctl TIOCSSERIAL");
-
-#endif
-
-    }
-
-    tcflush(fd, TCIFLUSH);
-
-    return 0;
-}
-
-
-// private function
-int serial_translate_baud(int inrate)
-{
-    switch(inrate)
-    {
-    case 0:
-        return B0;
-    case 300:
-        return B300;
-    case 1200:
-        return B1200;
-    case 2400:
-        return B2400;
-    case 4800:
-        return B4800;
-    case 9600:
-        return B9600;
-    case 19200:
-        return B19200;
-    case 38400:
-        return B38400;
-    case 57600:
-        return B57600;
-    case 115200:
-        return B115200;
-    case 2000000:
-        return B2000000;
-    case 230400:
-        return B230400;
-#ifdef SUPPORT_HISPEED
-    case 460800:
-        return B460800;
-#endif
-    default:
-        return -1; // do custom divisor
-    }
-}
-
 
 int open_ftdi_port(char* device, char* speed)
 {
     struct termios g_initialAtt, newAtt;
-    struct serial_struct sstruct;
     int port = open(device, O_RDWR | O_NOCTTY | O_NONBLOCK);
 
     int ispeed = atoi(speed); //convert string to int //
@@ -134,11 +32,9 @@ int open_ftdi_port(char* device, char* speed)
         newAtt.c_cflag = B921600 | CS8 | CLOCAL | CRTSCTS; // Enable RTS CTS flow control
     } else if(ispeed == 2000000)
     {
-        serial_setbaud(port, 2000000);
         newAtt.c_cflag = CS8 | CLOCAL | CRTSCTS; // Enable RTS CTS flow control
     } else if(ispeed == 115200)
     {
-        //serial_setbaud(port, 115200);
         newAtt.c_cflag = B115200 | CS8 | CLOCAL | CRTSCTS; // Enable RTS CTS flow control
     } else //default rate: 115200
     {
