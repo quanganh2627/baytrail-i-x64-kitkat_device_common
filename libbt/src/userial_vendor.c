@@ -78,7 +78,6 @@ static vnd_userial_cb_t t_vnd_userial;
 /*****************************************************************************
 **   Helper Functions
 *****************************************************************************/
-int serial_translate_baud(int inrate);
 /*******************************************************************************
 **
 ** Function        userial_to_tcio_baud
@@ -171,112 +170,6 @@ void userial_vendor_init(void)
     snprintf(vnd_userial.port_name, VND_PORT_NAME_MAXLEN, "%s", \
             BLUETOOTH_UART_DEVICE_PORT);
 }
-
-/*******************************************************************************
-**
-** Function        serial_setbaud
-**
-** Description     Set serial baudrate for FTDI specific [Abhirup for FTDI]
-**
-** Returns         None
-**
-*******************************************************************************/
-int serial_setbaud(int fd, int baudrate)
-{
-    struct termios tios;
-    struct serial_struct ser;
-
-    ALOGI("+%s",__func__);
-    int baudratecode=serial_translate_baud(baudrate);
-
-    if (baudratecode>0)
-    {
-        ALOGI("IF. baudratecode:%u\n",baudratecode);
-        tcgetattr(fd, &tios);
-        cfsetispeed(&tios, baudratecode);
-        cfsetospeed(&tios, baudratecode);
-        tcflush(fd, TCIFLUSH);
-        tcsetattr(fd, TCSANOW, &tios);
-        ioctl(fd, TIOCGSERIAL, &ser);
-        ser.flags=(ser.flags&(~ASYNC_SPD_MASK));
-        ser.custom_divisor=1; //2M baud rate code
-
-        ioctl(fd, TIOCSSERIAL, &ser);
-    }
-    else
-    {
-        if (tcgetattr(fd, &tios))
-            perror("tcgetattr");
-
-        cfsetispeed(&tios, B38400);
-        cfsetospeed(&tios, B38400);
-        tcflush(fd, TCIFLUSH);
-
-        if (tcsetattr(fd, TCSANOW, &tios))
-            perror("tcsetattr");
-
-        if (ioctl(fd, TIOCGSERIAL, &ser))
-            perror("ioctl TIOCGSERIAL");
-
-        ser.flags=(ser.flags&(~ASYNC_SPD_MASK)) | ASYNC_SPD_CUST;
-        ser.custom_divisor=48;
-        ser.custom_divisor=ser.baud_base/baudrate;
-        ser.reserved_char[0]=0; // what the hell does this do?
-
-        if (ioctl(fd, TIOCSSERIAL, &ser))
-            perror("ioctl TIOCSSERIAL");
-    }
-    tcflush(fd, TCIFLUSH);
-
-
-    tios.c_cflag = CS8 | CLOCAL | CRTSCTS; // Enable RTS CTS flow control
-
-    cfmakeraw(&tios);
-    tcsetattr(fd,TCSANOW,&tios);
-
-    ALOGI("-%s",__func__);
-    return 0;
-}
-
-
-// private function
-int serial_translate_baud(int inrate)
-{
-    switch(inrate)
-    {
-    case 0:
-        return B0;
-    case 300:
-        return B300;
-    case 1200:
-        return B1200;
-    case 2400:
-        return B2400;
-    case 4800:
-        return B4800;
-    case 9600:
-        return B9600;
-    case 19200:
-        return B19200;
-    case 38400:
-        return B38400;
-    case 57600:
-        return B57600;
-    case 115200:
-        return B115200;
-    case 2000000:
-        return B2000000;
-    case 230400:
-        return B230400;
-#ifdef SUPPORT_HISPEED
-    case 460800:
-        return B460800;
-#endif
-    default:
-        return -1; // do custom divisor
-    }
-}
-
 
 /*******************************************************************************
 **
