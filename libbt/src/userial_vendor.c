@@ -34,7 +34,6 @@
 #include "bt_vendor_brcm.h"
 #include "userial.h"
 #include "userial_vendor.h"
-#include "serial.h"
 #include <errno.h>
 #include <string.h>
 
@@ -242,8 +241,6 @@ ALOGI("%s",__func__);
 
     tcgetattr(vnd_userial.fd, &vnd_userial.termios);
 
-    //Set baudrate to 2MBps
-    //serial_setbaud(vnd_userial.fd, 2000000);
     //vnd_userial.termios.c_cflag = CS8 | CLOCAL | CRTSCTS; // Enable RTS CTS flow control
     vnd_userial.termios.c_cflag = B115200 | CS8 | CLOCAL | CRTSCTS; // Enable RTS CTS flow control
 
