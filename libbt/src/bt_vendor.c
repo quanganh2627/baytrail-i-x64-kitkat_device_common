@@ -1,5 +1,16 @@
 /******************************************************************************
  *
+ * Copyright (C) 2012-2013 Intel Mobile Communications GmbH
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  *  Copyright (C) 2009-2012 Broadcom Corporation
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,7 +29,7 @@
 
 /******************************************************************************
  *
- *  Filename:      bt_vendor_brcm.c
+ *  Filename:      bt_vendor.c
  *
  *  Description:   Broadcom vendor specific library implementation
  *
@@ -27,7 +38,7 @@
 #define LOG_TAG "bt_vendor"
 
 #include <utils/Log.h>
-#include "bt_vendor_brcm.h"
+#include "bt_vendor.h"
 #include "upio.h"
 #include "userial_vendor.h"
 
@@ -46,15 +57,17 @@
 /******************************************************************************
 **  Externs
 ******************************************************************************/
-
+#if defined INTEL_WP2_USB
 void hw_config_start(void);
+#endif
+uint8_t register_int_evt_callback();
 uint8_t hw_lpm_enable(uint8_t turn_on);
 uint32_t hw_lpm_get_idle_timeout(void);
 void hw_lpm_set_wake_state(uint8_t wake_assert);
+void vnd_load_conf(const char *p_path);
 #if (SCO_CFG_INCLUDED == TRUE)
 void hw_sco_config(void);
 #endif
-void vnd_load_conf(const char *p_path);
 #if (HW_END_WITH_HCI_RESET == TRUE)
 void hw_epilog_process(void);
 #endif
@@ -100,19 +113,6 @@ static int init(const bt_vendor_callbacks_t* p_cb, unsigned char *local_bdaddr)
         return -1;
     }
 
-#if (VENDOR_LIB_RUNTIME_TUNING_ENABLED == TRUE)
-    ALOGW("*****************************************************************");
-    ALOGW("*****************************************************************");
-    ALOGW("** Warning - BT Vendor Lib is loaded in debug tuning mode!");
-    ALOGW("**");
-    ALOGW("** If this is not intentional, rebuild libbt-vendor.so ");
-    ALOGW("** with VENDOR_LIB_RUNTIME_TUNING_ENABLED=FALSE and ");
-    ALOGW("** check if any run-time tuning parameters needed to be");
-    ALOGW("** carried to the build-time configuration accordingly.");
-    ALOGW("*****************************************************************");
-    ALOGW("*****************************************************************");
-#endif
-
     userial_vendor_init();
     upio_init();
 
@@ -143,25 +143,32 @@ static int op(bt_vendor_opcode_t opcode, void *param)
                 if (*state == BT_VND_PWR_OFF)
                     upio_set_bluetooth_power(UPIO_BT_POWER_OFF);
                 else if (*state == BT_VND_PWR_ON)
+                {
+                    /*
+                     * Before power on the chip. Enable the callback
+                     * to receive the first default bd data event
+                     */
+                    register_int_evt_callback();
                     upio_set_bluetooth_power(UPIO_BT_POWER_ON);
+                }
             }
             break;
 
         case BT_VND_OP_FW_CFG:
             {
-                ALOGW("BT_VND_OP_FW_CFG");
-                ALOGW("Skipping into hw_config_start().");
+                BTVNDDBG("BT_VND_OP_FW_CFG");
+#if defined INTEL_AG6XX_UART
+                BTVNDDBG("DO NOTHING.");
+#elif defined INTEL_WP2_USB
                 hw_config_start();
-                //bt_vendor_cbacks->fwcfg_cb(BT_VND_OP_RESULT_SUCCESS);
+#endif
             }
             break;
 
         case BT_VND_OP_SCO_CFG:
             {
 #if (SCO_CFG_INCLUDED == TRUE)
-                ALOGI("hw_sco_config Skipping");
-                //hw_sco_config();
-
+                hw_sco_config();
                 bt_vendor_cbacks->scocfg_cb(BT_VND_OP_RESULT_SUCCESS);
 #else
                 retval = -1;
@@ -220,9 +227,7 @@ static int op(bt_vendor_opcode_t opcode, void *param)
             {
 #if (HW_END_WITH_HCI_RESET == FALSE)
                 if (bt_vendor_cbacks)
-                {
                     bt_vendor_cbacks->epilog_cb(BT_VND_OP_RESULT_SUCCESS);
-                }
 #else
                 hw_epilog_process();
 #endif
