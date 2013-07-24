@@ -1,5 +1,16 @@
 /******************************************************************************
  *
+ * Copyright (C) 2012-2013 Intel Mobile Communications GmbH
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  *  Copyright (C) 2009-2012 Broadcom Corporation
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,19 +39,22 @@
 
 #define LOG_TAG "bt_hwcfg"
 
-#include <utils/Log.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <signal.h>
-#include <time.h>
-#include <errno.h>
-#include <fcntl.h>
-#include <dirent.h>
 #include <ctype.h>
 #include <cutils/properties.h>
+#include <dirent.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <pthread.h>
+#include <signal.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <time.h>
+#include <utils/Log.h>
+
 #include "bt_hci_bdroid.h"
-#include "bt_vendor_brcm.h"
+#include "bt_vendor.h"
 #include "userial.h"
 #include "userial_vendor.h"
 #include "upio.h"
@@ -48,6 +62,8 @@
 /******************************************************************************
 **  Constants & Macros
 ******************************************************************************/
+
+#define BTHW_DBG TRUE
 
 #ifndef BTHW_DBG
 #define BTHW_DBG FALSE
@@ -59,37 +75,56 @@
 #define BTHWDBG(param, ...) {}
 #endif
 
-#define FW_PATCHFILE_EXTENSION      ".hcd"
+#if defined INTEL_AG6XX_UART
+#define FW_PATCHFILE_EXTENSION      ".pbn"
+#define BDDATA_FILE                 "/system/etc/bluetooth/bddata"
+#else
+#define FW_PATCHFILE_EXTENSION      ".seq"
+#endif
 #define FW_PATCHFILE_EXTENSION_LEN  4
-#define FW_PATCHFILE_PATH_MAXLEN    248 /* Local_Name length of return of
-                                           HCI_Read_Local_Name */
+#define FW_PATCHFILE_PATH_MAXLEN    128 /* FW patch path Max length */
 
 #define HCI_CMD_MAX_LEN             258
 
+/* HCI command opcode */
+#if defined INTEL_WP2_USB
 #define HCI_RESET                               0x0C03
-#define HCI_VSC_WRITE_UART_CLOCK_SETTING        0xFC45
-#define HCI_VSC_UPDATE_BAUDRATE                 0xFC18
-#define HCI_READ_LOCAL_NAME                     0x0C14
-#define HCI_VSC_DOWNLOAD_MINIDRV                0xFC2E
-#define HCI_VSC_WRITE_BD_ADDR                   0xFC01
-#define HCI_VSC_WRITE_SLEEP_MODE                0xFC27
-#define HCI_VSC_WRITE_SCO_PCM_INT_PARAM         0xFC1C
-#define HCI_VSC_WRITE_PCM_DATA_FORMAT_PARAM     0xFC1E
-#define HCI_VSC_WRITE_I2SPCM_INTERFACE_PARAM    0xFC6D
-#define HCI_VSC_LAUNCH_RAM                      0xFC4E
-#define HCI_READ_LOCAL_BDADDR                   0x1009
-
-#define HCI_EVT_CMD_CMPL_STATUS_RET_BYTE        5
-#define HCI_EVT_CMD_CMPL_LOCAL_NAME_STRING      6
-#define HCI_EVT_CMD_CMPL_LOCAL_BDADDR_ARRAY     6
-#define HCI_EVT_CMD_CMPL_OPCODE                 3
-#define LPM_CMD_PARAM_SIZE                      12
-#define UPDATE_BAUDRATE_CMD_PARAM_SIZE          6
+#endif
+#define HCI_INTEL_READ_SW_VERSION               0xFC05
+#if defined INTEL_WP2_UART
+#define HCI_INTEL_SET_UART_BAUD                 0xFC06
+#endif
+#define HCI_INTEL_MANUFACTURE_MODE              0xFC11
+#ifdef INTEL_AG6XX_UART
+#define HCI_INTEL_INF_BDDATA                    0xFC2F
+#endif
+#define HCI_INTEL_INF_MEM_WRITE                 0xFC8E
+/* HCI command param sizes */
+#define HCI_INTEL_MEM_WRITE_MODE_BYTE           0
 #define HCI_CMD_PREAMBLE_SIZE                   3
-#define HCD_REC_PAYLOAD_LEN_BYTE                2
-#define BD_ADDR_LEN                             6
-#define LOCAL_NAME_BUFFER_LEN                   32
-#define LOCAL_BDADDR_PATH_BUFFER_LEN            256
+#define HCI_INTEL_MANUFACTURE_MODE_PARAM_SIZE   2
+#define HCI_INTEL_SET_UART_BAUD_PARAM_SIZE      1
+#define HCI_INTEL_READ_SW_VERSION_PARAM_SIZE    0
+#define HCI_INTEL_INF_BDDATA_PARAM_SIZE         80
+/* HCI read sw version number byte location */
+#if defined INTEL_AG6XX_UART
+#define HCI_EVT_READ_HW_VARIANT                 7
+#define HCI_EVT_READ_HW_REVISION                8
+#else
+
+#endif
+#define HCI_EVT_CMD_CMPL_STATUS_RET_BYTE        5
+#define HCI_COMMAND_STATUS_EVT_STATUS_BYTE      2
+#define HCI_INTEL_EVT_STATUS_RET_BYTE           3
+/* HCI event code & event id */
+#define HCI_COMMAND_CMPL_EVT_CODE               0X0E
+#define HCI_COMMAND_STATUS_EVT_CODE             0x0F
+#define HCI_INTEL_DEBUG_EVT_CODE                0xFF
+#define HCI_INTEL_STARTUP                       0x00
+#define HCI_INTEL_DEFAULT_BD_DATA               0x05
+#define HCI_INTEL_WRITE_BD_DATA_CMPL            0x19
+
+#define PATCH_MAX_LENGTH                        244
 
 #define STREAM_TO_UINT16(u16, p) {u16 = ((uint16_t)(*(p)) + (((uint16_t)(*((p) + 1))) << 8)); (p) += 2;}
 #define UINT16_TO_STREAM(p, u16) {*(p)++ = (uint8_t)(u16); *(p)++ = (uint8_t)((u16) >> 8);}
@@ -98,29 +133,47 @@
 /******************************************************************************
 **  Local type definitions
 ******************************************************************************/
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+
+/* Return Types */
+typedef enum
+{
+    FAILURE = -1,
+    SUCCESS = 0
+} return_value;
 
 /* Hardware Configuration State */
 enum {
-    HW_CFG_START = 1,
-    HW_CFG_SET_UART_CLOCK,
-    HW_CFG_SET_UART_BAUD_1,
-    HW_CFG_READ_LOCAL_NAME,
-    HW_CFG_DL_MINIDRIVER,
-    HW_CFG_DL_FW_PATCH,
-    HW_CFG_SET_UART_BAUD_2,
-    HW_CFG_SET_BD_ADDR
-#if (USE_CONTROLLER_BDADDR == TRUE)
-    , HW_CFG_READ_BD_ADDR
+    HW_CFG_INIT = 0,            /* Initial state. */
+    HW_CFG_MANUFACTURE_ON,      /* Intel manufature mode on */
+    HW_CFG_MANUFACTURE_OFF,     /* Intel manufature mode off */
+#if defined INTEL_AG6XX_UART
+    HW_CFG_BDDATA,              /* Open bddata file and download the BD data */
+    HW_CFG_BDDATA_STATUS,       /* This handles the command status comes after write BD DATA command */
 #endif
+#if defined INTEL_WP2_USB
+    HW_CFG_MEMWRITE,            /* Patching in WP2 family of chips. For RAM chips this is whole FW image dl. */
+#endif
+    HW_SET_BAUD_HS,             /* Change the controller to higher baud rate*/
+    HW_SET_HOST_BAUD,           /* Change the host baud rate */
+    HW_CFG_MANUFACTURE_OFF_CMPL,/* Command complete after manufacture mode off received */
+    HW_CFG_SW_READ_VERSION,     /* Read SW version from controller to construct required patch filename */
+    HW_CFG_SW_FIND_PATCH,       /* Find the required patch file in file system */
+    HW_CFG_DL_FW_PATCH,         /* Donwload the firmware patch file */
+    HW_CFG_DL_FW_PATCH1,
+    HW_CFG_SUCCESS,             /* Controller init finished */
 };
 
 /* h/w config control block */
 typedef struct
 {
     uint8_t state;                          /* Hardware configuration state */
-    int     fw_fd;                          /* FW patch file fd */
-    uint8_t f_set_baud_2;                   /* Baud rate switch state */
-    char    local_chip_name[LOCAL_NAME_BUFFER_LEN];
+    FILE*   fw_fd;                          /* FW patch file pointer */
+    uint8_t is_patch_enabled;               /* Is patch is enabled? 2: enabled 1:not enabled */
+#if defined INTEL_AG6XX_UART
+    uint32_t address;                       /* Address in which data has to be written */
+    uint32_t nr_of_bytes;                   /* No of bytes to be written field in pbn file */
+#endif
 } bt_hw_cfg_cb_t;
 
 /* low power mode parameters */
@@ -140,25 +193,18 @@ typedef struct
     uint8_t pulsed_host_wake;               /* pulsed host wake if mode = 1 */
 } bt_lpm_param_t;
 
-/* Firmware re-launch settlement time */
-typedef struct {
-    const char *chipset_name;
-    const uint32_t delay_time;
-} fw_settlement_entry_t;
-
-
 /******************************************************************************
 **  Externs
 ******************************************************************************/
 
 void hw_config_cback(void *p_evt_buf);
-extern uint8_t vnd_local_bd_addr[BD_ADDR_LEN];
-
 
 /******************************************************************************
 **  Static variables
 ******************************************************************************/
-
+#if defined INTEL_WP2_USB
+static int fw_patchfile_empty = 0;
+#endif
 static char fw_patchfile_path[256] = FW_PATCHFILE_LOCATION;
 static char fw_patchfile_name[128] = { 0 };
 #if (VENDOR_LIB_RUNTIME_TUNING_ENABLED == TRUE)
@@ -183,101 +229,78 @@ static bt_lpm_param_t lpm_param =
     LPM_PULSED_HOST_WAKE
 };
 
-#if (!defined(SCO_USE_I2S_INTERFACE) || (SCO_USE_I2S_INTERFACE == FALSE))
-static uint8_t bt_sco_param[SCO_PCM_PARAM_SIZE] =
-{
-    SCO_PCM_ROUTING,
-    SCO_PCM_IF_CLOCK_RATE,
-    SCO_PCM_IF_FRAME_TYPE,
-    SCO_PCM_IF_SYNC_MODE,
-    SCO_PCM_IF_CLOCK_MODE
-};
-
-static uint8_t bt_pcm_data_fmt_param[PCM_DATA_FORMAT_PARAM_SIZE] =
-{
-    PCM_DATA_FMT_SHIFT_MODE,
-    PCM_DATA_FMT_FILL_BITS,
-    PCM_DATA_FMT_FILL_METHOD,
-    PCM_DATA_FMT_FILL_NUM,
-    PCM_DATA_FMT_JUSTIFY_MODE
-};
-#else
-static uint8_t bt_sco_param[SCO_I2SPCM_PARAM_SIZE] =
-{
-    SCO_I2SPCM_IF_MODE,
-    SCO_I2SPCM_IF_ROLE,
-    SCO_I2SPCM_IF_SAMPLE_RATE,
-    SCO_I2SPCM_IF_CLOCK_RATE
-};
-#endif
-
-/*
- * The look-up table of recommended firmware settlement delay (milliseconds) on
- * known chipsets.
- */
-static const fw_settlement_entry_t fw_settlement_table[] = {
-    {"BCM43241", 200},
-    {(const char *) NULL, 100}  // Giving the generic fw settlement delay setting.
-};
-
 /******************************************************************************
-**  Static functions
+**  Global functions
 ******************************************************************************/
+/*******************************************************************************
+**
+** Function        register_int_evt_callbaks
+**
+** Description     Registers callback function to get internal async event.
+**
+** Returns         success/failure to register.
+**
+*******************************************************************************/
+uint8_t register_int_evt_callback()
+{
+    /* Initialize the state */
+    BTHWDBG("%s", __func__);
+    hw_cfg_cb.state = HW_CFG_INIT;
+    return bt_vendor_cbacks->int_evt_callback_reg_cb(hw_config_cback);
+}
 
 /******************************************************************************
 **  Controller Initialization Static Functions
 ******************************************************************************/
-
 /*******************************************************************************
 **
-** Function        look_up_fw_settlement_delay
+** Function        check_event
 **
-** Description     If FW_PATCH_SETTLEMENT_DELAY_MS has not been explicitly
-**                 re-defined in the platform specific build-time configuration
-**                 file, we will search into the look-up table for a
-**                 recommended firmware settlement delay value.
+** Description     checks the event for HCI success and returns the result
 **
-**                 Although the settlement time might be also related to board
-**                 configurations such as the crystal clocking speed.
-**
-** Returns         Firmware settlement delay
+** Returns         0: success, otherwise errorcode.
 **
 *******************************************************************************/
-uint32_t look_up_fw_settlement_delay (void)
+static uint8_t check_event(uint8_t* p_buf)
 {
-    uint32_t ret_value;
-    fw_settlement_entry_t *p_entry;
-
-    if (FW_PATCH_SETTLEMENT_DELAY_MS > 0)
+    uint8_t event_code, sub_event_code;
+    uint8_t status;
+    if (!p_buf)
+        return FAILURE;
+    event_code = p_buf[0];
+    BTHWDBG("%s event_code:0x%x", __func__, event_code);
+    switch(event_code)
     {
-        ret_value = FW_PATCH_SETTLEMENT_DELAY_MS;
-    }
-#if (VENDOR_LIB_RUNTIME_TUNING_ENABLED == TRUE)
-    else if (fw_patch_settlement_delay >= 0)
-    {
-        ret_value = fw_patch_settlement_delay;
-    }
-#endif
-    else
-    {
-        p_entry = (fw_settlement_entry_t *)fw_settlement_table;
-
-        while (p_entry->chipset_name != NULL)
-        {
-            if (strstr(hw_cfg_cb.local_chip_name, p_entry->chipset_name)!=NULL)
+        case HCI_INTEL_DEBUG_EVT_CODE:
+            sub_event_code = p_buf[2];
+            BTHWDBG("%s subevent:0x%x", __func__, sub_event_code);
+            switch(sub_event_code)
             {
-                break;
+                case HCI_INTEL_STARTUP:
+                    return SUCCESS;
+                case HCI_INTEL_WRITE_BD_DATA_CMPL:
+                    return p_buf[HCI_INTEL_EVT_STATUS_RET_BYTE];
+                case HCI_INTEL_DEFAULT_BD_DATA:
+                    /* This is first default bd data event */
+                    if (hw_cfg_cb.state == HW_CFG_INIT)
+                    {
+                        /* Deregister the callback */
+                        bt_vendor_cbacks->int_evt_callback_dereg_cb();
+                        hw_cfg_cb.state = HW_CFG_MANUFACTURE_ON;
+                    }
+                    /* 3rd byte (memory status): 02- manufacture data in RAM is not valid */
+                    return p_buf[HCI_INTEL_EVT_STATUS_RET_BYTE]==0x02? SUCCESS : FAILURE;
+                default:
+                    BTHWDBG("%s Unknown vsc event. EI:0x%02X", __func__, sub_event_code);
+                    return FAILURE; // Unexpected event. Something Unusual happened.
             }
-
-            p_entry++;
-        }
-
-        ret_value = p_entry->delay_time;
+        case HCI_COMMAND_CMPL_EVT_CODE:
+            return p_buf[HCI_EVT_CMD_CMPL_STATUS_RET_BYTE];
+        case HCI_COMMAND_STATUS_EVT_CODE:
+            return p_buf[HCI_COMMAND_STATUS_EVT_STATUS_BYTE];
+        default:
+            return SUCCESS;
     }
-
-    BTHWDBG( "Settlement delay -- %d ms", ret_value);
-
-    return (ret_value);
 }
 
 /*******************************************************************************
@@ -306,6 +329,7 @@ void ms_delay (uint32_t timeout)
     } while (err < 0 && errno ==EINTR);
 }
 
+#if defined INTEL_WP2_UART
 /*******************************************************************************
 **
 ** Function        line_speed_to_userial_baud
@@ -354,7 +378,7 @@ uint8_t line_speed_to_userial_baud(uint32_t line_speed)
 
     return baud;
 }
-
+#endif
 
 /*******************************************************************************
 **
@@ -393,15 +417,17 @@ static int hw_strncmp (const char *p_str1, const char *p_str2, const int len)
 ** Returns          TRUE when found the target patch file, otherwise FALSE
 **
 *******************************************************************************/
-static uint8_t hw_config_findpatch(char *p_chip_id_str)
+static uint8_t hw_config_findpatch(char *p_chip_id_str, char** p_patch_file)
 {
     DIR *dirp;
     struct dirent *dp;
     int filenamelen;
     uint8_t retval = FALSE;
+    char* patch_filename = NULL;
 
     BTHWDBG("Target name = [%s]", p_chip_id_str);
 
+    //TODO: Implement read from conf file
     if (strlen(fw_patchfile_name)> 0)
     {
         /* If specific filepath and filename have been given in run-time
@@ -416,7 +442,7 @@ static uint8_t hw_config_findpatch(char *p_chip_id_str)
         }
         strcat(p_chip_id_str, fw_patchfile_name);
 
-        ALOGI("FW patchfile: %s", p_chip_id_str);
+        BTHWDBG("FW patchfile: %s", p_chip_id_str);
         return TRUE;
     }
 
@@ -429,7 +455,7 @@ static uint8_t hw_config_findpatch(char *p_chip_id_str)
             if ((hw_strncmp(dp->d_name, p_chip_id_str, strlen(p_chip_id_str)) \
                 ) == 0)
             {
-                /* Check if it has .hcd extenstion */
+                /* Check if it has .pbn extenstion */
                 filenamelen = strlen(dp->d_name);
                 if ((filenamelen >= FW_PATCHFILE_EXTENSION_LEN) &&
                     ((hw_strncmp(
@@ -438,7 +464,7 @@ static uint8_t hw_config_findpatch(char *p_chip_id_str)
                           FW_PATCHFILE_EXTENSION_LEN) \
                      ) == 0))
                 {
-                    ALOGI("Found patchfile: %s/%s", \
+                    BTHWDBG("Found patchfile: %s%s", \
                         fw_patchfile_path, dp->d_name);
 
                     /* Make sure length does not exceed maximum */
@@ -449,16 +475,29 @@ static uint8_t hw_config_findpatch(char *p_chip_id_str)
                     }
                     else
                     {
-                        memset(p_chip_id_str, 0, FW_PATCHFILE_PATH_MAXLEN);
+                        BTHWDBG("Found patchfile. Store location and name");
+                        //free(p_chip_id_str);
+                        //p_chip_id_str = NULL;
+                        int path_length = strlen(fw_patchfile_path) + strlen(dp->d_name);
+                        if (fw_patchfile_path[ \
+                            strlen(fw_patchfile_path)- 1 \
+                            ] != '/')
+                            path_length++;
+                        patch_filename = (char*) malloc (path_length * sizeof (char));
+
+                        memset(patch_filename, 0, sizeof (patch_filename));
                         /* Found patchfile. Store location and name */
-                        strcpy(p_chip_id_str, fw_patchfile_path);
+                        strcpy(patch_filename, fw_patchfile_path);
+                        //BTHWDBG("1 p_chip_id_str:%s",patch_filename);
                         if (fw_patchfile_path[ \
                             strlen(fw_patchfile_path)- 1 \
                             ] != '/')
                         {
-                            strcat(p_chip_id_str, "/");
+                            strcat(patch_filename, "/");
                         }
-                        strcat(p_chip_id_str, dp->d_name);
+                        strcat(patch_filename, dp->d_name);
+                        //BTHWDBG("2 p_chip_id_str:%s",patch_filename);
+                        *p_patch_file = patch_filename;
                         retval = TRUE;
                     }
                     break;
@@ -470,103 +509,170 @@ static uint8_t hw_config_findpatch(char *p_chip_id_str)
 
         if (retval == FALSE)
         {
-            /* Try again chip name without revision info */
-
-            int len = strlen(p_chip_id_str);
-            char *p = p_chip_id_str + len - 1;
-
-            /* Scan backward and look for the first alphabet
-               which is not M or m
-            */
-            while (len > 3) // BCM****
-            {
-                if ((isdigit(*p)==0) && (*p != 'M') && (*p != 'm'))
-                    break;
-
-                p--;
-                len--;
-            }
-
-            if (len > 3)
-            {
-                *p = 0;
-                retval = hw_config_findpatch(p_chip_id_str);
-            }
+            ALOGE("Could not open %s", fw_patchfile_path);
         }
     }
     else
     {
-        ALOGE("Could not open %s", fw_patchfile_path);
+        ALOGE("Patch file path doesn't exist");
     }
 
     return (retval);
 }
 
-/*******************************************************************************
-**
-** Function         hw_config_set_bdaddr
-**
-** Description      Program controller's Bluetooth Device Address
-**
-** Returns          TRUE, if valid address is sent
-**                  FALSE, otherwise
-**
-*******************************************************************************/
-static uint8_t hw_config_set_bdaddr(HC_BT_HDR *p_buf)
+#ifdef INTEL_AG6XX_UART
+unsigned char char_to_hex(char c)
 {
-    uint8_t retval = FALSE;
-    uint8_t *p = (uint8_t *) (p_buf + 1);
-
-    ALOGI("Setting local bd addr to %02X:%02X:%02X:%02X:%02X:%02X",
-        vnd_local_bd_addr[0], vnd_local_bd_addr[1], vnd_local_bd_addr[2],
-        vnd_local_bd_addr[3], vnd_local_bd_addr[4], vnd_local_bd_addr[5]);
-
-    UINT16_TO_STREAM(p, HCI_VSC_WRITE_BD_ADDR);
-    *p++ = BD_ADDR_LEN; /* parameter length */
-    *p++ = vnd_local_bd_addr[5];
-    *p++ = vnd_local_bd_addr[4];
-    *p++ = vnd_local_bd_addr[3];
-    *p++ = vnd_local_bd_addr[2];
-    *p++ = vnd_local_bd_addr[1];
-    *p = vnd_local_bd_addr[0];
-
-    p_buf->len = HCI_CMD_PREAMBLE_SIZE + BD_ADDR_LEN;
-    hw_cfg_cb.state = HW_CFG_SET_BD_ADDR;
-
-    retval = bt_vendor_cbacks->xmit_cb(HCI_VSC_WRITE_BD_ADDR, p_buf, \
-                                 hw_config_cback);
-
-    return (retval);
+    if (c == '0') return 0x00;
+    else if (c == '1') return 0x01;
+    else if (c == '2') return 0x02;
+    else if (c == '3') return 0x03;
+    else if (c == '4') return 0x04;
+    else if (c == '5') return 0x05;
+    else if (c == '6') return 0x06;
+    else if (c == '7') return 0x07;
+    else if (c == '8') return 0x08;
+    else if (c == '9') return 0x09;
+    else if (c == 'A' || c == 'a') return 0x0a;
+    else if (c == 'B' || c == 'b') return 0x0b;
+    else if (c == 'C' || c == 'c') return 0x0c;
+    else if (c == 'D' || c == 'd') return 0x0d;
+    else if (c == 'E' || c == 'e') return 0x0e;
+    else if (c == 'F' || c == 'f') return 0x0f;
+    else
+        return -1;
 }
 
-#if (USE_CONTROLLER_BDADDR == TRUE)
+
 /*******************************************************************************
 **
-** Function         hw_config_read_bdaddr
+** Function         open_bddata
 **
-** Description      Read controller's Bluetooth Device Address
+** Description      Function to open the bddata file stored in /data/misc/bluedroid/bddata
 **
-** Returns          TRUE, if valid address is sent
-**                  FALSE, otherwise
+** Returns          None
 **
 *******************************************************************************/
-static uint8_t hw_config_read_bdaddr(HC_BT_HDR *p_buf)
+int open_bddata(uint8_t *p)
 {
-    uint8_t retval = FALSE;
-    uint8_t *p = (uint8_t *) (p_buf + 1);
+    FILE *fp;
+    unsigned int i;
+    int ret;
+    unsigned char c = '\0';
+    unsigned char *line = NULL;
+    int read;
+    size_t cmd_size;
 
-    UINT16_TO_STREAM(p, HCI_READ_LOCAL_BDADDR);
-    *p = 0; /* parameter length */
-
-    p_buf->len = HCI_CMD_PREAMBLE_SIZE;
-    hw_cfg_cb.state = HW_CFG_READ_BD_ADDR;
-
-    retval = bt_vendor_cbacks->xmit_cb(HCI_READ_LOCAL_BDADDR, p_buf, \
-                                 hw_config_cback);
-
-    return (retval);
+    BTHWDBG("%s",__func__);
+    fp = fopen(BDDATA_FILE, "rb");
+    if (fp == NULL)
+    {
+        ALOGE("cannot open:%s",BDDATA_FILE);
+        return FAILURE;
+       }
+    line = (uint8_t*) malloc (1024 * sizeof (uint8_t));
+    if (line == NULL)
+    {
+        ALOGE("Malloc failure");
+        return FAILURE;
+    }
+       read = fread(line, sizeof(unsigned char), 1024, fp);
+       if (read < 0)
+       {
+           ALOGE("line is not read properly. read:%d errno:%d strerror:%s", read, errno, strerror(errno));
+           free(line);
+           return FAILURE;
+    }
+       line[read] = '\0';
+    cmd_size = read;
+    for(i=0; i<cmd_size; i++)
+    {
+        if (i%2 == 1)
+        {
+            c |= char_to_hex(line[i]);
+            *p++ = c;
+        }
+        else
+        {
+            c = char_to_hex(line[i]) << 4;
+        }
+    }
+    if (line)
+        free(line);
+    fclose(fp);
+    return SUCCESS;
 }
-#endif // (USE_CONTROLLER_BDADDR == TRUE)
+#endif
+
+#if defined INTEL_WP2_USB
+/*******************************************************************************
+**
+** Function         form_byte
+**
+** Description      Convert input to a byte
+**
+** Returns          formed byte
+**
+*******************************************************************************/
+unsigned char form_byte(char msb, char lsb)
+{
+    unsigned char byte;
+    byte = (char_to_hex(msb)) << 4;
+    byte |= char_to_hex(lsb);
+    return byte;
+}
+
+/*******************************************************************************
+**
+** Function         form_word
+**
+** Description      Convert input to a word
+**
+** Returns          formed word
+**
+*******************************************************************************/
+uint16_t form_word(uint8_t msb, uint8_t lsb)
+{
+    uint16_t byte;
+    byte = msb << 8;
+    byte |= lsb;
+    return byte;
+}
+#endif
+
+#if (BTHW_DBG == TRUE)
+/*******************************************************************************
+**
+** Function         hex_print
+**
+** Description      Print buffer 'a' in hex
+**
+** Returns          None
+**
+*******************************************************************************/
+static void hex_print(char* msg, unsigned char *a, unsigned int size)
+{
+    if (a==NULL)
+    {
+        ALOGE("%s nothing to print.", __func__);
+    }
+    char *p = (char*) malloc (sizeof (char) * ((size*3) + strlen(msg)+1));
+    if (!p)
+        return;
+    bzero(p, size + strlen(msg)+1+(size));
+    int i;
+    sprintf (p,"%s%s:", p, msg);
+    for (i=0;i<size;i++)
+        sprintf (p, "%s %X", p, a[i]);
+    p[(size*3) + strlen(msg)] = '\0';
+    BTHWDBG ("%s\n",p);
+    if (p)
+    {
+        free(p);
+        p = NULL;
+    }
+}
+#endif
 
 /*******************************************************************************
 **
@@ -579,25 +685,39 @@ static uint8_t hw_config_read_bdaddr(HC_BT_HDR *p_buf)
 *******************************************************************************/
 void hw_config_cback(void *p_mem)
 {
-    HC_BT_HDR *p_evt_buf = (HC_BT_HDR *) p_mem;
-    char        *p_name, *p_tmp;
-    uint8_t     *p, status;
+    HC_BT_HDR *p_evt_buf = NULL;
+    char        *p_name;
+    char *p_tmp;
+    uint8_t     *p;
+    uint8_t status = FAILURE;
     uint16_t    opcode;
-    HC_BT_HDR  *p_buf=NULL;
+    HC_BT_HDR *p_buf = NULL;
     uint8_t     is_proceeding = FALSE;
-    int         i;
-#if (USE_CONTROLLER_BDADDR == TRUE)
-    const uint8_t null_bdaddr[BD_ADDR_LEN] = {0,0,0,0,0,0};
+#if defined INTEL_AG6XX_UART
+    int read;
+    uint8_t* pData = NULL;
+#endif
+#if defined INTEL_WP2_USB
+    int         pos;
 #endif
 
-    status = *((uint8_t *)(p_evt_buf + 1) + HCI_EVT_CMD_CMPL_STATUS_RET_BYTE);
-    p = (uint8_t *)(p_evt_buf + 1) + HCI_EVT_CMD_CMPL_OPCODE;
-    STREAM_TO_UINT16(opcode,p);
+    pthread_mutex_lock( &mutex );
+    BTHWDBG("%s",__func__);
 
+    p_evt_buf = (HC_BT_HDR *) p_mem;
+    p = (uint8_t*)(p_evt_buf+1);
+    status = check_event(p);
+
+    BTHWDBG("p_evt_buf->event:0x%x p_evt_buf->len:0x%x p_evt_buf->offset:0x%x p_evt_buf->layer_specific:0x%x",\
+        p_evt_buf->event, p_evt_buf->len, p_evt_buf->offset, p_evt_buf->layer_specific);
+    BTHWDBG("status:%u p:%x",status, *p);
     /* Ask a new buffer big enough to hold any HCI commands sent in here */
-    if ((status == 0) && bt_vendor_cbacks)
+    if ((status == SUCCESS) && bt_vendor_cbacks)
+    {
         p_buf = (HC_BT_HDR *) bt_vendor_cbacks->alloc(BT_HC_HDR_SIZE + \
                                                        HCI_CMD_MAX_LEN);
+        bzero(p_buf, BT_HC_HDR_SIZE + HCI_CMD_MAX_LEN);
+    }
 
     if (p_buf != NULL)
     {
@@ -610,226 +730,384 @@ void hw_config_cback(void *p_mem)
 
         switch (hw_cfg_cb.state)
         {
-            case HW_CFG_SET_UART_BAUD_1:
-                /* update baud rate of host's UART port */
-                ALOGI("bt vendor lib: set UART baud %i", UART_TARGET_BAUD_RATE);
-                userial_vendor_set_baud( \
-                    line_speed_to_userial_baud(UART_TARGET_BAUD_RATE) \
-                );
-
-                /* read local name */
-                UINT16_TO_STREAM(p, HCI_READ_LOCAL_NAME);
-                *p = 0; /* parameter length */
-
-                p_buf->len = HCI_CMD_PREAMBLE_SIZE;
-                hw_cfg_cb.state = HW_CFG_READ_LOCAL_NAME;
-
-                is_proceeding = bt_vendor_cbacks->xmit_cb(HCI_READ_LOCAL_NAME, \
-                                                    p_buf, hw_config_cback);
-                break;
-
-            case HW_CFG_READ_LOCAL_NAME:
-                p_tmp = p_name = (char *) (p_evt_buf + 1) + \
-                         HCI_EVT_CMD_CMPL_LOCAL_NAME_STRING;
-
-                for (i=0; (i < LOCAL_NAME_BUFFER_LEN)||(*(p_name+i) != 0); i++)
-                    *(p_name+i) = toupper(*(p_name+i));
-
-                if ((p_name = strstr(p_name, "BCM")) != NULL)
-                {
-                    strncpy(hw_cfg_cb.local_chip_name, p_name, \
-                            LOCAL_NAME_BUFFER_LEN-1);
-                }
-                else
-                {
-                    strncpy(hw_cfg_cb.local_chip_name, "UNKNOWN", \
-                            LOCAL_NAME_BUFFER_LEN-1);
-                    p_name = p_tmp;
-                }
-
-                hw_cfg_cb.local_chip_name[LOCAL_NAME_BUFFER_LEN-1] = 0;
-
-                BTHWDBG("Chipset %s", hw_cfg_cb.local_chip_name);
-
-                if ((status = hw_config_findpatch(p_name)) == TRUE)
-                {
-                    if ((hw_cfg_cb.fw_fd = open(p_name, O_RDONLY)) == -1)
-                    {
-                        ALOGE("vendor lib preload failed to open [%s]", p_name);
-                    }
-                    else
-                    {
-                        /* vsc_download_minidriver */
-                        UINT16_TO_STREAM(p, HCI_VSC_DOWNLOAD_MINIDRV);
-                        *p = 0; /* parameter length */
-
-                        p_buf->len = HCI_CMD_PREAMBLE_SIZE;
-                        hw_cfg_cb.state = HW_CFG_DL_MINIDRIVER;
-
-                        is_proceeding = bt_vendor_cbacks->xmit_cb( \
-                                            HCI_VSC_DOWNLOAD_MINIDRV, p_buf, \
-                                            hw_config_cback);
-                    }
-                }
-                else
-                {
-                    ALOGE( \
-                    "vendor lib preload failed to locate firmware patch file" \
-                    );
-                }
-
-                if (is_proceeding == FALSE)
-                {
-                    is_proceeding = hw_config_set_bdaddr(p_buf);
-                }
-                break;
-
-            case HW_CFG_DL_MINIDRIVER:
-                /* give time for placing firmware in download mode */
-                ms_delay(50);
-                hw_cfg_cb.state = HW_CFG_DL_FW_PATCH;
-                /* fall through intentionally */
-            case HW_CFG_DL_FW_PATCH:
-                p_buf->len = read(hw_cfg_cb.fw_fd, p, HCI_CMD_PREAMBLE_SIZE);
-                if (p_buf->len > 0)
-                {
-                    if ((p_buf->len < HCI_CMD_PREAMBLE_SIZE) || \
-                        (opcode == HCI_VSC_LAUNCH_RAM))
-                    {
-                        ALOGW("firmware patch file might be altered!");
-                    }
-                    else
-                    {
-                        p_buf->len += read(hw_cfg_cb.fw_fd, \
-                                           p+HCI_CMD_PREAMBLE_SIZE,\
-                                           *(p+HCD_REC_PAYLOAD_LEN_BYTE));
-                        STREAM_TO_UINT16(opcode,p);
-                        is_proceeding = bt_vendor_cbacks->xmit_cb(opcode, \
-                                                p_buf, hw_config_cback);
-                        break;
-                    }
-                }
-
-                close(hw_cfg_cb.fw_fd);
-                hw_cfg_cb.fw_fd = -1;
-
-                /* Normally the firmware patch configuration file
-                 * sets the new starting baud rate at 115200.
-                 * So, we need update host's baud rate accordingly.
-                 */
-                ALOGI("bt vendor lib: set UART baud 115200");
-                userial_vendor_set_baud(USERIAL_BAUD_115200);
-
-                /* Next, we would like to boost baud rate up again
-                 * to desired working speed.
-                 */
-                hw_cfg_cb.f_set_baud_2 = TRUE;
-
-                /* Check if we need to pause a few hundred milliseconds
-                 * before sending down any HCI command.
-                 */
-                ms_delay(look_up_fw_settlement_delay());
-
-                /* fall through intentionally */
-            case HW_CFG_START:
-                if (UART_TARGET_BAUD_RATE > 3000000)
-                {
-                    /* set UART clock to 48MHz */
-                    UINT16_TO_STREAM(p, HCI_VSC_WRITE_UART_CLOCK_SETTING);
-                    *p++ = 1; /* parameter length */
-                    *p = 1; /* (1,"UART CLOCK 48 MHz")(2,"UART CLOCK 24 MHz") */
-
-                    p_buf->len = HCI_CMD_PREAMBLE_SIZE + 1;
-                    hw_cfg_cb.state = HW_CFG_SET_UART_CLOCK;
-
-                    is_proceeding = bt_vendor_cbacks->xmit_cb( \
-                                        HCI_VSC_WRITE_UART_CLOCK_SETTING, \
-                                        p_buf, hw_config_cback);
-                    break;
-                }
-                /* fall through intentionally */
-            case HW_CFG_SET_UART_CLOCK:
-                /* set controller's UART baud rate to 3M */
-                UINT16_TO_STREAM(p, HCI_VSC_UPDATE_BAUDRATE);
-                *p++ = UPDATE_BAUDRATE_CMD_PARAM_SIZE; /* parameter length */
-                *p++ = 0; /* encoded baud rate */
-                *p++ = 0; /* use encoded form */
-                UINT32_TO_STREAM(p, UART_TARGET_BAUD_RATE);
+#if defined INTEL_WP2_UART
+            case HW_SET_BAUD_HS:
+                BTHWDBG("HW_SET_BAUD_HS");
+                ms_delay(10);
+                UINT16_TO_STREAM(p, HCI_INTEL_SET_UART_BAUD);
+                *p++ = HCI_INTEL_SET_UART_BAUD_PARAM_SIZE; /* parameter length */
+                *p++ = 0x0A; //Baud rate 2M
 
                 p_buf->len = HCI_CMD_PREAMBLE_SIZE + \
-                             UPDATE_BAUDRATE_CMD_PARAM_SIZE;
-                hw_cfg_cb.state = (hw_cfg_cb.f_set_baud_2) ? \
-                            HW_CFG_SET_UART_BAUD_2 : HW_CFG_SET_UART_BAUD_1;
+                             HCI_INTEL_SET_UART_BAUD_PARAM_SIZE;
+                hw_cfg_cb.state = HW_SET_HOST_BAUD;
 
-                is_proceeding = bt_vendor_cbacks->xmit_cb(HCI_VSC_UPDATE_BAUDRATE, \
-                                                    p_buf, hw_config_cback);
-                break;
+                is_proceeding = bt_vendor_cbacks->xmit_cb(HCI_INTEL_SET_UART_BAUD, \
+                                                    p_buf, NULL);
 
-            case HW_CFG_SET_UART_BAUD_2:
-                /* update baud rate of host's UART port */
-                ALOGI("bt vendor lib: set UART baud %i", UART_TARGET_BAUD_RATE);
-                userial_vendor_set_baud( \
-                    line_speed_to_userial_baud(UART_TARGET_BAUD_RATE) \
-                );
-
-#if (USE_CONTROLLER_BDADDR == TRUE)
-                if ((is_proceeding = hw_config_read_bdaddr(p_buf)) == TRUE)
-                    break;
-#else
-                if ((is_proceeding = hw_config_set_bdaddr(p_buf)) == TRUE)
-                    break;
+            // fall through intentional
+           case HW_SET_HOST_BAUD:
+                   BTHWDBG("HW_SET_HOST_BAUD");
+                //TODO: change host baud rate.
+                //break;
 #endif
-                /* fall through intentionally */
-            case HW_CFG_SET_BD_ADDR:
-                ALOGI("vendor lib fwcfg completed");
-                bt_vendor_cbacks->dealloc(p_buf);
-                bt_vendor_cbacks->fwcfg_cb(BT_VND_OP_RESULT_SUCCESS);
+            case HW_CFG_MANUFACTURE_ON:
+                BTHWDBG("HW_CFG_MANUFACTURE_ON");
+                UINT16_TO_STREAM(p, HCI_INTEL_MANUFACTURE_MODE);
+                *p++ = HCI_INTEL_MANUFACTURE_MODE_PARAM_SIZE; /* parameter length */
+                *p++ = 01;
+                *p++ = 00;
 
-                hw_cfg_cb.state = 0;
+                p_buf->len = HCI_CMD_PREAMBLE_SIZE + \
+                             HCI_INTEL_MANUFACTURE_MODE_PARAM_SIZE;
 
-                if (hw_cfg_cb.fw_fd != -1)
+#if defined INTEL_AG6XX_UART
+                hw_cfg_cb.state = HW_CFG_BDDATA;
+#elif defined INTEL_WP2_USB
+                /*
+                 * Previous command was HCI RESET. Skip command complete
+                 * event. Respond to default bd data event.
+                 */
+                uint8_t *buf = (uint8_t*) (p_evt_buf+1);
+                if (buf[2] == HCI_INTEL_DEFAULT_BD_DATA)
+                    hw_cfg_cb.state = HW_CFG_SW_READ_VERSION;
+                else
                 {
-                    close(hw_cfg_cb.fw_fd);
-                    hw_cfg_cb.fw_fd = -1;
+                    if (bt_vendor_cbacks)
+                        bt_vendor_cbacks->dealloc(p_buf);
+                    is_proceeding = TRUE;
+                    break;
                 }
+#endif
+                is_proceeding = bt_vendor_cbacks->xmit_cb(HCI_INTEL_MANUFACTURE_MODE, \
+                                                    HCI_COMMAND_CMPL_EVT_CODE, \
+                                                    p_buf, hw_config_cback);
 
+                break;
+#if defined INTEL_AG6XX_UART
+            case HW_CFG_BDDATA:
+                BTHWDBG("HW CFG_INF_BDDATA.");
+                UINT16_TO_STREAM(p, HCI_INTEL_INF_BDDATA);
+                *p++ = HCI_INTEL_INF_BDDATA_PARAM_SIZE; /* parameter length */
+                int ret = open_bddata(p);
+                if (ret == 0)
+                {
+                    p_buf->len = HCI_CMD_PREAMBLE_SIZE + \
+                             HCI_INTEL_INF_BDDATA_PARAM_SIZE;
+                    hw_cfg_cb.state = HW_CFG_BDDATA_STATUS;
+
+                    is_proceeding = bt_vendor_cbacks->xmit_cb(HCI_INTEL_INF_BDDATA, \
+                                                    HCI_INTEL_WRITE_BD_DATA_CMPL, \
+                                                    p_buf, hw_config_cback);
+
+                } else
+                {
+                    //FIXME should turn off manufacture mode and gracefully fail
+                    ALOGE("open_bddata FAILED.");
+                    bt_vendor_cbacks->fwcfg_cb(BT_VND_OP_RESULT_FAIL);
+                }
+                break;
+            case HW_CFG_BDDATA_STATUS:
+                BTHWDBG("HW_CFG_BDDATA_STATUS");
+                if (bt_vendor_cbacks)
+                    bt_vendor_cbacks->dealloc(p_buf);
+                hw_cfg_cb.state = HW_CFG_SW_READ_VERSION;
                 is_proceeding = TRUE;
                 break;
+#endif
+            case HW_CFG_SW_READ_VERSION:
+                BTHWDBG("HW_READ_VERSION");
+                p_buf->len = HCI_CMD_PREAMBLE_SIZE + \
+                             HCI_INTEL_READ_SW_VERSION_PARAM_SIZE;
+                UINT16_TO_STREAM(p, HCI_INTEL_READ_SW_VERSION);
+                *p++ = HCI_INTEL_READ_SW_VERSION_PARAM_SIZE; /* parameter length */
+                *p++ = 00;
 
-#if (USE_CONTROLLER_BDADDR == TRUE)
-            case HW_CFG_READ_BD_ADDR:
-                p_tmp = (char *) (p_evt_buf + 1) + \
-                         HCI_EVT_CMD_CMPL_LOCAL_BDADDR_ARRAY;
+                hw_cfg_cb.state = HW_CFG_SW_FIND_PATCH;
 
-                if (memcmp(p_tmp, null_bdaddr, BD_ADDR_LEN) == 0)
+                is_proceeding = bt_vendor_cbacks->xmit_cb(HCI_INTEL_READ_SW_VERSION, \
+                                                    HCI_COMMAND_CMPL_EVT_CODE, \
+                                                    p_buf, hw_config_cback);
+                break;
+            case HW_CFG_SW_FIND_PATCH:
+                BTHWDBG("HW_CFG_SW_FIND_PATCH");
+                //Find the patch. and open the patch file
+                char* p_patch_file = NULL;
+                uint8_t* temp = (uint8_t*)(p_evt_buf + 1);
+                uint8_t fw_patch_name[FW_PATCHFILE_PATH_MAXLEN];
+                bzero(fw_patch_name, FW_PATCHFILE_PATH_MAXLEN);
+#if defined INTEL_AG6XX_UART
+                uint8_t hw_variant = temp[HCI_EVT_READ_HW_VARIANT];
+                uint8_t hw_revision = temp[HCI_EVT_READ_HW_REVISION];
+                uint16_t dev_id = (hw_variant<<8) | (hw_revision<<0);
+                BTHWDBG("hw_varient:0x%x hw_revision:0x%x Device id:0x%x", hw_variant, hw_revision,dev_id);
+                /* AG620 file name should be a00.pbn unless specified in conf file */
+                sprintf(fw_patch_name, "%x\0", dev_id);
+#endif
+#if defined INTEL_WP2_USB
+                sprintf(fw_patch_name, "%02x%02x%02x%02x%02x%02x%02x%02x%02x\0", temp[6], temp[7],
+                temp[8], temp[9], temp[10], temp[11],
+                temp[12], temp[13], temp[14]);
+#endif
+                //BTHWDBG("FW patch file name constructed:%s",fw_patch_name);
+                if (hw_config_findpatch(fw_patch_name, &p_patch_file) == TRUE)
                 {
-                    // Controller does not have a valid OTP BDADDR!
-                    // Set the BTIF initial BDADDR instead.
-                    if ((is_proceeding = hw_config_set_bdaddr(p_buf)) == TRUE)
-                        break;
+                    //Open the patch file
+                    BTHWDBG("Open patch file:%s",p_patch_file);
+                    if ((hw_cfg_cb.fw_fd = fopen(p_patch_file, "rb")) == NULL) {
+                        ALOGE("Cannot open %s", p_patch_file);
+                        if (p_patch_file)
+                        {
+                            free (p_patch_file);
+                            p_patch_file = NULL;
+                        }
+                        hw_cfg_cb.state = HW_CFG_MANUFACTURE_OFF;
+                        goto HW_CFG_MANUFACTURE_OFF;
+                    }
+                    else
+                    {
+                        BTHWDBG("Donwload FW will begin");
+                        if (p_patch_file)
+                        {
+                            free (p_patch_file);
+                            p_patch_file = NULL;
+                        }
+#if defined INTEL_AG6XX_UART
+                        hw_cfg_cb.state = HW_CFG_DL_FW_PATCH;
+#endif
+#if defined INTEL_WP2_USB
+                        hw_cfg_cb.state = HW_CFG_MEMWRITE;
+#endif
+                    }
                 }
                 else
                 {
-                    ALOGI("Controller OTP bdaddr %02X:%02X:%02X:%02X:%02X:%02X",
-                        *(p_tmp+5), *(p_tmp+4), *(p_tmp+3),
-                        *(p_tmp+2), *(p_tmp+1), *p_tmp);
+                    //Patch file not found. Nothing to do
+                    BTHWDBG("Patch file not found");
+                    hw_cfg_cb.state = HW_CFG_MANUFACTURE_OFF;
+                    goto HW_CFG_MANUFACTURE_OFF;
                 }
+            //Fall Through Intentional
+#if defined INTEL_WP2_USB
+        case HW_CFG_MEMWRITE:
+                {
+        char line[1024];
+                memset(line, 0, 1024);
+                BTHWDBG("HW_CFG_MEMWRITE");
+                if(!feof(hw_cfg_cb.fw_fd)) {
+                    BTHWDBG("file not empty");
+                    fgets(line, sizeof(line), hw_cfg_cb.fw_fd);
 
-                ALOGI("vendor lib fwcfg completed");
-                bt_vendor_cbacks->dealloc(p_buf);
+                    while((line[0] == '*') || (line[0] == 0xd ) || (line[0] == 'F') || (line[1] == '2')){
+                        if(feof(hw_cfg_cb.fw_fd)) {
+                            BTHWDBG("End of file");
+                            if(hw_cfg_cb.fw_fd != NULL)
+                            {
+                                fclose(hw_cfg_cb.fw_fd);
+                                hw_cfg_cb.fw_fd = NULL;
+                            }
+
+                            if(fw_patchfile_empty != 0)
+                            {
+                                hw_cfg_cb.is_patch_enabled = 2;
+                                hw_cfg_cb.state = HW_CFG_MANUFACTURE_OFF;
+                                goto HW_CFG_MANUFACTURE_OFF;
+                            }
+                            else
+                            {
+                                BTHWDBG("Patch file is empty");
+                                hw_cfg_cb.state = HW_CFG_MANUFACTURE_OFF;
+                                goto HW_CFG_MANUFACTURE_OFF;
+                            }
+                            break;
+                        }
+
+                        fgets(line, sizeof(line), hw_cfg_cb.fw_fd);
+                    }
+                    if((line[0] == '0') && (line[1] == '1')){
+                        int length = 0;
+                        int parameter_length = 0;
+                        uint8_t opcodeByte[2];
+                        uint16_t opcode = 0;
+                        opcodeByte[0] = form_byte(line[3], line[4]);
+                        opcodeByte[1] = form_byte(line[5], line[6]);
+                        opcode = form_word(opcodeByte[1], opcodeByte[0]);
+                        length = strlen(line);
+
+                        UINT16_TO_STREAM(p, opcode);
+                        parameter_length = form_byte(line[8], line[9]);
+                        *p = parameter_length;  /* parameter length */
+                        p++;
+                        p_buf->len = HCI_CMD_PREAMBLE_SIZE + parameter_length;
+                        BTHWDBG("Length =%X, %d\n", parameter_length, length);
+
+                        for(pos=0; pos < (length - 10); pos++){
+                            *p = form_byte(line[10+pos], line[11+pos]);
+                            p++;
+                            pos++;
+                        }
+
+                        fw_patchfile_empty = 1;
+                        hw_cfg_cb.state = HW_CFG_MEMWRITE;
+
+                        is_proceeding = bt_vendor_cbacks->xmit_cb(opcode,
+                HCI_COMMAND_CMPL_EVT_CODE,\
+                            p_buf, hw_config_cback);
+                    }
+                    break;
+                }
+                else
+                {
+                    BTHWDBG("Patch file is empty");
+                    hw_cfg_cb.state = HW_CFG_MANUFACTURE_OFF;
+                    goto HW_CFG_MANUFACTURE_OFF;
+                }
+                break;
+        }
+#endif
+#if defined INTEL_AG6XX_UART
+            case HW_CFG_DL_FW_PATCH:
+                BTHWDBG("HW_CFG_DL_FW_PATCH");
+                //Read the address to patch
+                read = fread(&hw_cfg_cb.address, 1,sizeof(uint32_t), hw_cfg_cb.fw_fd);
+                if(!read)
+                {
+                    //This should never happen
+                    ALOGE("Read Fw patch file failed.");
+                    hw_cfg_cb.state = HW_CFG_MANUFACTURE_OFF;
+                    goto HW_CFG_MANUFACTURE_OFF;
+                }
+                else if(hw_cfg_cb.address == 0xFFFFFFFF)
+                {
+                    //FW patch download DONE.
+                    BTHWDBG("FW patch download DONE.");
+                    hw_cfg_cb.is_patch_enabled = 2; //Patch is enabled
+                    hw_cfg_cb.state = HW_CFG_MANUFACTURE_OFF;
+                    goto HW_CFG_MANUFACTURE_OFF;
+                }
+                else
+                {
+                    BTHWDBG("Address read:0x%x",hw_cfg_cb.address);
+                    //Read the length of the patch
+                    read = fread(&hw_cfg_cb.nr_of_bytes, 1 , sizeof(uint32_t), hw_cfg_cb.fw_fd);
+                    if(!read)
+                    {
+                        hw_cfg_cb.state = HW_CFG_MANUFACTURE_OFF;
+                        goto HW_CFG_MANUFACTURE_OFF;
+                    }
+                    else
+                    {
+                        BTHWDBG("hw_cfg_cb.nr_of_bytes:%u", hw_cfg_cb.nr_of_bytes);
+                        hw_cfg_cb.state = HW_CFG_DL_FW_PATCH1;
+                    }
+                }
+            case HW_CFG_DL_FW_PATCH1:
+                if (hw_cfg_cb.nr_of_bytes > 0)
+                {
+                    uint8_t data_length = (hw_cfg_cb.nr_of_bytes > PATCH_MAX_LENGTH) ?PATCH_MAX_LENGTH:hw_cfg_cb.nr_of_bytes;
+                    pData = (unsigned char *) malloc(data_length);
+                    read = fread(pData, data_length, sizeof(unsigned char), hw_cfg_cb.fw_fd);
+                    if(!read)
+                    {
+                        hw_cfg_cb.state = HW_CFG_MANUFACTURE_OFF;
+                    }
+                    else
+                    {
+                        //BTHWDBG("hw_cfg_cb.address:0x%x data_length:%u", hw_cfg_cb.address, data_length);
+                        UINT16_TO_STREAM(p, HCI_INTEL_INF_MEM_WRITE);
+                        /* parameter length (address size + mode size + length + data size)*/
+                        uint8_t param_length =  4 + 1 + 1 + data_length;
+                        *p++ = param_length;
+                        *p++ = (hw_cfg_cb.address & 0x000000FF) >> 0;
+                        *p++ = (hw_cfg_cb.address & 0x0000FF00) >> 8;
+                        *p++ = (hw_cfg_cb.address & 0x00FF0000) >> 16;
+                        *p++ = (hw_cfg_cb.address & 0xFF000000) >> 24;
+                        BTHWDBG("Address of p:%p",p);
+                        *p++ = HCI_INTEL_MEM_WRITE_MODE_BYTE;
+                        *p++ = data_length; //Length of the data buffer
+                        memcpy (p, pData, data_length);
+                        if (pData!=NULL)
+                        {
+                            free(pData);
+                        }
+                        //BTHWDBG("param_length:%u", param_length);
+
+                        p_buf->len = HCI_CMD_PREAMBLE_SIZE + \
+                                     param_length;
+
+                        hw_cfg_cb.nr_of_bytes -= data_length;
+                        if (hw_cfg_cb.nr_of_bytes > 0)
+                        {
+                            hw_cfg_cb.address += data_length;
+                            hw_cfg_cb.state = HW_CFG_DL_FW_PATCH1; //More data to write in this location
+                        }
+                        else
+                        {
+                            hw_cfg_cb.state = HW_CFG_DL_FW_PATCH; //Retrieve new address
+                        }
+
+                        /****************************************************************/
+#if (BTHW_DBG == TRUE)
+                        BTHWDBG("p_buf->len:%u", p_buf->len);
+                        hex_print("Before sending. CMD SENT", (uint8_t*)(p_buf+1), p_buf->len);
+#endif
+                        /****************************************************************/
+                        is_proceeding = bt_vendor_cbacks->xmit_cb(HCI_INTEL_INF_MEM_WRITE, \
+                                                            HCI_COMMAND_CMPL_EVT_CODE,\
+                                                            p_buf, hw_config_cback);
+                    }
+                }
+                break;
+#endif
+            case HW_CFG_MANUFACTURE_OFF:
+HW_CFG_MANUFACTURE_OFF:
+                BTHWDBG("HW_CFG_MANUFACTURE_OFF");
+                UINT16_TO_STREAM(p, HCI_INTEL_MANUFACTURE_MODE);
+                *p++ = HCI_INTEL_MANUFACTURE_MODE_PARAM_SIZE; /* parameter length */
+                *p++ = 00;
+                *p++ = hw_cfg_cb.is_patch_enabled; //0: if patch is not enabled,
+
+                p_buf->len = HCI_CMD_PREAMBLE_SIZE + \
+                             HCI_INTEL_MANUFACTURE_MODE_PARAM_SIZE;
+                hw_cfg_cb.state = HW_CFG_MANUFACTURE_OFF_CMPL;
+
+                is_proceeding = bt_vendor_cbacks->xmit_cb(HCI_INTEL_MANUFACTURE_MODE, \
+                                                    HCI_INTEL_STARTUP, \
+                                                    p_buf, hw_config_cback);
+                break;
+            case HW_CFG_MANUFACTURE_OFF_CMPL:
+                BTHWDBG("HW_CFG_MANUFACTURE_OFF_CMPL");
+                if (bt_vendor_cbacks)
+                    bt_vendor_cbacks->dealloc(p_buf);
+                hw_cfg_cb.state = HW_CFG_SUCCESS;
+                is_proceeding = TRUE;
+                break;
+            case HW_CFG_SUCCESS:
+                BTHWDBG("FIRMWARE INIT SUCCESS...");
+                uint8_t *buf = (uint8_t*)(p_evt_buf+1);
+                if (bt_vendor_cbacks)
+                    bt_vendor_cbacks->dealloc(p_buf);
+                /* Startup event is not received */
+                if ( buf[2] != HCI_INTEL_STARTUP)
+                    break;
+                //Report the fw download success
                 bt_vendor_cbacks->fwcfg_cb(BT_VND_OP_RESULT_SUCCESS);
-
                 hw_cfg_cb.state = 0;
 
                 if (hw_cfg_cb.fw_fd != -1)
                 {
-                    close(hw_cfg_cb.fw_fd);
+                    fclose(hw_cfg_cb.fw_fd);
                     hw_cfg_cb.fw_fd = -1;
                 }
 
                 is_proceeding = TRUE;
                 break;
-#endif // (USE_CONTROLLER_BDADDR == TRUE)
+            default:
+                BTHWDBG("SKIP");
+                if (bt_vendor_cbacks)
+                    bt_vendor_cbacks->dealloc(p_buf);
+                is_proceeding = TRUE;
+                break;
         } // switch(hw_cfg_cb.state)
     } // if (p_buf != NULL)
 
@@ -856,110 +1134,13 @@ void hw_config_cback(void *p_mem)
 
         hw_cfg_cb.state = 0;
     }
+    pthread_mutex_unlock( &mutex );
 }
-
-/******************************************************************************
-**   LPM Static Functions
-******************************************************************************/
-
-/*******************************************************************************
-**
-** Function         hw_lpm_ctrl_cback
-**
-** Description      Callback function for lpm enable/disable rquest
-**
-** Returns          None
-**
-*******************************************************************************/
-void hw_lpm_ctrl_cback(void *p_mem)
-{
-    HC_BT_HDR *p_evt_buf = (HC_BT_HDR *) p_mem;
-    bt_vendor_op_result_t status = BT_VND_OP_RESULT_FAIL;
-
-    if (*((uint8_t *)(p_evt_buf + 1) + HCI_EVT_CMD_CMPL_STATUS_RET_BYTE) == 0)
-    {
-        status = BT_VND_OP_RESULT_SUCCESS;
-    }
-
-    if (bt_vendor_cbacks)
-    {
-        bt_vendor_cbacks->lpm_cb(status);
-        bt_vendor_cbacks->dealloc(p_evt_buf);
-    }
-}
-
-
-#if (SCO_CFG_INCLUDED == TRUE)
-/*****************************************************************************
-**   SCO Configuration Static Functions
-*****************************************************************************/
-
-/*******************************************************************************
-**
-** Function         hw_sco_cfg_cback
-**
-** Description      Callback function for SCO configuration rquest
-**
-** Returns          None
-**
-*******************************************************************************/
-void hw_sco_cfg_cback(void *p_mem)
-{
-    HC_BT_HDR *p_evt_buf = (HC_BT_HDR *) p_mem;
-    uint8_t     *p;
-    uint16_t    opcode;
-    HC_BT_HDR  *p_buf=NULL;
-
-    p = (uint8_t *)(p_evt_buf + 1) + HCI_EVT_CMD_CMPL_OPCODE;
-    STREAM_TO_UINT16(opcode,p);
-
-    /* Free the RX event buffer */
-    if (bt_vendor_cbacks)
-        bt_vendor_cbacks->dealloc(p_evt_buf);
-
-#if (!defined(SCO_USE_I2S_INTERFACE) || (SCO_USE_I2S_INTERFACE == FALSE))
-    if (opcode == HCI_VSC_WRITE_SCO_PCM_INT_PARAM)
-    {
-        uint8_t ret = FALSE;
-
-        /* Ask a new buffer to hold WRITE_PCM_DATA_FORMAT_PARAM command */
-        if (bt_vendor_cbacks)
-            p_buf = (HC_BT_HDR *) bt_vendor_cbacks->alloc(BT_HC_HDR_SIZE + \
-                                                HCI_CMD_PREAMBLE_SIZE + \
-                                                PCM_DATA_FORMAT_PARAM_SIZE);
-        if (p_buf)
-        {
-            p_buf->event = MSG_STACK_TO_HC_HCI_CMD;
-            p_buf->offset = 0;
-            p_buf->layer_specific = 0;
-            p_buf->len = HCI_CMD_PREAMBLE_SIZE + PCM_DATA_FORMAT_PARAM_SIZE;
-
-            p = (uint8_t *) (p_buf + 1);
-            UINT16_TO_STREAM(p, HCI_VSC_WRITE_PCM_DATA_FORMAT_PARAM);
-            *p++ = PCM_DATA_FORMAT_PARAM_SIZE;
-            memcpy(p, &bt_pcm_data_fmt_param, PCM_DATA_FORMAT_PARAM_SIZE);
-
-            if ((ret = bt_vendor_cbacks->xmit_cb(HCI_VSC_WRITE_PCM_DATA_FORMAT_PARAM,\
-                                           p_buf, hw_sco_cfg_cback)) == FALSE)
-            {
-                bt_vendor_cbacks->dealloc(p_buf);
-            }
-            else
-                return;
-        }
-    }
-#endif  // !SCO_USE_I2S_INTERFACE
-
-if (bt_vendor_cbacks)
-    bt_vendor_cbacks->scocfg_cb(BT_VND_OP_RESULT_SUCCESS);
-}
-#endif // SCO_CFG_INCLUDED
 
 /*****************************************************************************
 **   Hardware Configuration Interface Functions
 *****************************************************************************/
-
-
+#if defined INTEL_WP2_USB
 /*******************************************************************************
 **
 ** Function        hw_config_start
@@ -976,7 +1157,7 @@ void hw_config_start(void)
 
     hw_cfg_cb.state = 0;
     hw_cfg_cb.fw_fd = -1;
-    hw_cfg_cb.f_set_baud_2 = FALSE;
+    hw_cfg_cb.is_patch_enabled = 0; //Patch is not enabled
 
     /* Start from sending HCI_RESET */
 
@@ -997,9 +1178,10 @@ void hw_config_start(void)
         UINT16_TO_STREAM(p, HCI_RESET);
         *p = 0; /* parameter length */
 
-        hw_cfg_cb.state = HW_CFG_START;
+        hw_cfg_cb.state = HW_CFG_MANUFACTURE_ON;
 
-        bt_vendor_cbacks->xmit_cb(HCI_RESET, p_buf, hw_config_cback);
+        bt_vendor_cbacks->xmit_cb(HCI_RESET, HCI_INTEL_DEFAULT_BD_DATA,\
+                                                p_buf, hw_config_cback);
     }
     else
     {
@@ -1010,6 +1192,7 @@ void hw_config_start(void)
         }
     }
 }
+#endif
 
 /*******************************************************************************
 **
@@ -1022,47 +1205,14 @@ void hw_config_start(void)
 *******************************************************************************/
 uint8_t hw_lpm_enable(uint8_t turn_on)
 {
-    HC_BT_HDR  *p_buf = NULL;
-    uint8_t     *p;
-    uint8_t     ret = FALSE;
+    uint8_t ret = FALSE;
+#if defined INTEL_AG6XX_UART
+    /*
+     *Implement LPM enable sequence
+     */
+#elif defined INTEL_WP2_USB
 
-    if (bt_vendor_cbacks)
-        p_buf = (HC_BT_HDR *) bt_vendor_cbacks->alloc(BT_HC_HDR_SIZE + \
-                                                       HCI_CMD_PREAMBLE_SIZE + \
-                                                       LPM_CMD_PARAM_SIZE);
-
-    if (p_buf)
-    {
-        p_buf->event = MSG_STACK_TO_HC_HCI_CMD;
-        p_buf->offset = 0;
-        p_buf->layer_specific = 0;
-        p_buf->len = HCI_CMD_PREAMBLE_SIZE + LPM_CMD_PARAM_SIZE;
-
-        p = (uint8_t *) (p_buf + 1);
-        UINT16_TO_STREAM(p, HCI_VSC_WRITE_SLEEP_MODE);
-        *p++ = LPM_CMD_PARAM_SIZE; /* parameter length */
-
-        if (turn_on)
-        {
-            memcpy(p, &lpm_param, LPM_CMD_PARAM_SIZE);
-            upio_set(UPIO_LPM_MODE, UPIO_ASSERT, 0);
-        }
-        else
-        {
-            memset(p, 0, LPM_CMD_PARAM_SIZE);
-            upio_set(UPIO_LPM_MODE, UPIO_DEASSERT, 0);
-        }
-
-        if ((ret = bt_vendor_cbacks->xmit_cb(HCI_VSC_WRITE_SLEEP_MODE, p_buf, \
-                                        hw_lpm_ctrl_cback)) == FALSE)
-        {
-            bt_vendor_cbacks->dealloc(p_buf);
-        }
-    }
-
-    if ((ret == FALSE) && bt_vendor_cbacks)
-        bt_vendor_cbacks->lpm_cb(BT_VND_OP_RESULT_FAIL);
-
+#endif
     return ret;
 }
 
@@ -1085,11 +1235,11 @@ uint32_t hw_lpm_get_idle_timeout(void)
     timeout_ms = (uint32_t)lpm_param.host_stack_idle_threshold \
                             * LPM_IDLE_TIMEOUT_MULTIPLE;
 
-    if (strstr(hw_cfg_cb.local_chip_name, "BCM4325") != NULL)
+/*    if (strstr(hw_cfg_cb.local_chip_name, "BCM4325") != NULL)
         timeout_ms *= 25; // 12.5 or 25 ?
     else
         timeout_ms *= 300;
-
+*/
     return timeout_ms;
 }
 
@@ -1121,58 +1271,7 @@ void hw_lpm_set_wake_state(uint8_t wake_assert)
 *******************************************************************************/
 void hw_sco_config(void)
 {
-    HC_BT_HDR  *p_buf = NULL;
-    uint8_t     *p, ret;
-
-#if (!defined(SCO_USE_I2S_INTERFACE) || (SCO_USE_I2S_INTERFACE == FALSE))
-    uint16_t cmd_u16 = HCI_CMD_PREAMBLE_SIZE + SCO_PCM_PARAM_SIZE;
-#else
-    uint16_t cmd_u16 = HCI_CMD_PREAMBLE_SIZE + SCO_I2SPCM_PARAM_SIZE;
-#endif
-
-    if (bt_vendor_cbacks)
-        p_buf = (HC_BT_HDR *) bt_vendor_cbacks->alloc(BT_HC_HDR_SIZE+cmd_u16);
-
-    if (p_buf)
-    {
-        p_buf->event = MSG_STACK_TO_HC_HCI_CMD;
-        p_buf->offset = 0;
-        p_buf->layer_specific = 0;
-        p_buf->len = cmd_u16;
-
-        p = (uint8_t *) (p_buf + 1);
-#if (!defined(SCO_USE_I2S_INTERFACE) || (SCO_USE_I2S_INTERFACE == FALSE))
-        UINT16_TO_STREAM(p, HCI_VSC_WRITE_SCO_PCM_INT_PARAM);
-        *p++ = SCO_PCM_PARAM_SIZE;
-        memcpy(p, &bt_sco_param, SCO_PCM_PARAM_SIZE);
-        cmd_u16 = HCI_VSC_WRITE_SCO_PCM_INT_PARAM;
-        ALOGI("SCO PCM configure {%d, %d, %d, %d, %d}",
-           bt_sco_param[0], bt_sco_param[1], bt_sco_param[2], bt_sco_param[3], \
-           bt_sco_param[4]);
-
-#else
-        UINT16_TO_STREAM(p, HCI_VSC_WRITE_I2SPCM_INTERFACE_PARAM);
-        *p++ = SCO_I2SPCM_PARAM_SIZE;
-        memcpy(p, &bt_sco_param, SCO_I2SPCM_PARAM_SIZE);
-        cmd_u16 = HCI_VSC_WRITE_I2SPCM_INTERFACE_PARAM;
-        ALOGI("SCO over I2SPCM interface {%d, %d, %d, %d}",
-           bt_sco_param[0], bt_sco_param[1], bt_sco_param[2], bt_sco_param[3]);
-#endif
-
-        if ((ret=bt_vendor_cbacks->xmit_cb(cmd_u16, p_buf, hw_sco_cfg_cback)) \
-             == FALSE)
-        {
-            bt_vendor_cbacks->dealloc(p_buf);
-        }
-        else
-            return;
-    }
-
-    if (bt_vendor_cbacks)
-    {
-        ALOGE("vendor lib scocfg aborted");
-        bt_vendor_cbacks->scocfg_cb(BT_VND_OP_RESULT_FAIL);
-    }
+    /* Implement if any vendor specific SCO init is needed. */
 }
 #endif  // SCO_CFG_INCLUDED
 

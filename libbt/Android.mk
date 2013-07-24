@@ -1,6 +1,17 @@
-LOCAL_PATH := $(call my-dir)
+ ######################################################################
+ # Copyright (C) 2012-2013 Intel Mobile Communications GmbH
+ #
+ # This software is licensed under the terms of the GNU General Public
+ # License version 2, as published by the Free Software Foundation, and
+ # may be copied, distributed, and modified under those terms.
+ #
+ # This program is distributed in the hope that it will be useful,
+ # but WITHOUT ANY WARRANTY; without even the implied warranty of
+ # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ # GNU General Public License for more details.
+ #####################################################################
 
-$(warning IN VENDOR TEST LIB MK)
+LOCAL_PATH := $(call my-dir)
 
 #userial_vendor_test
 
@@ -21,8 +32,6 @@ LOCAL_MODULE := bt_vendor_test
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_OWNER := intel
 
-$(warning LOCAL_MODULE:$(LOCAL_MODULE))
-$(warning LOCAL_PATH:$(LOCAL_PATH))
 include $(BUILD_EXECUTABLE)
 
 # libbt-vendor.so
@@ -32,8 +41,8 @@ include $(CLEAR_VARS)
 BDROID_DIR := $(TOP_DIR)external/bluetooth/bluedroid
 
 LOCAL_SRC_FILES := \
-        src/bt_vendor_brcm.c \
-        src/hardware_intel.c \
+        src/bt_vendor.c \
+        src/hardware.c \
         src/userial_vendor.c \
         src/upio.c \
         src/conf.c

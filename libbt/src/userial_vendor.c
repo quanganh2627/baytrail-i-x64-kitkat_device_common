@@ -1,5 +1,16 @@
 /******************************************************************************
  *
+ * Copyright (C) 2012-2013 Intel Mobile Communications GmbH
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  *  Copyright (C) 2009-2012 Broadcom Corporation
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,7 +42,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <stdio.h>
-#include "bt_vendor_brcm.h"
+#include "bt_vendor.h"
 #include "userial.h"
 #include "userial_vendor.h"
 #include <errno.h>
@@ -72,7 +83,6 @@ typedef struct
 ******************************************************************************/
 
 static vnd_userial_cb_t vnd_userial;
-static vnd_userial_cb_t t_vnd_userial;
 
 /*****************************************************************************
 **   Helper Functions
@@ -237,15 +247,11 @@ ALOGI("%s",__func__);
         return -1;
     }
 
-    tcflush(vnd_userial.fd, TCIOFLUSH);
-
     tcgetattr(vnd_userial.fd, &vnd_userial.termios);
-
-    //vnd_userial.termios.c_cflag = CS8 | CLOCAL | CRTSCTS; // Enable RTS CTS flow control
     vnd_userial.termios.c_cflag = B115200 | CS8 | CLOCAL | CRTSCTS; // Enable RTS CTS flow control
-
     cfmakeraw(&vnd_userial.termios);
     tcsetattr(vnd_userial.fd,TCSANOW,&vnd_userial.termios);
+    tcflush(vnd_userial.fd, TCIOFLUSH);
 
 #if 0
     vnd_userial.termios.c_cflag |= (CRTSCTS | stop_bits);

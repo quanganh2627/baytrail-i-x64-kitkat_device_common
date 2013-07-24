@@ -1,5 +1,16 @@
 /******************************************************************************
  *
+ * Copyright (C) 2012-2013 Intel Mobile Communications GmbH
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
  *  Copyright (C) 2009-2012 Broadcom Corporation
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,7 +29,7 @@
 
 /******************************************************************************
  *
- *  Filename:      bt_vendor_brcm.h
+ *  Filename:      bt_vendor.h
  *
  *  Description:   A wrapper header file of bt_vendor_lib.h
  *
@@ -27,8 +38,8 @@
  *
  ******************************************************************************/
 
-#ifndef BT_VENDOR_BRCM_H
-#define BT_VENDOR_BRCM_H
+#ifndef BT_VENDOR_H
+#define BT_VENDOR_H
 
 #include "bt_vendor_lib.h"
 #include "vnd_buildcfg.h"
@@ -49,37 +60,26 @@
 #define VENDOR_LIB_RUNTIME_TUNING_ENABLED   FALSE
 #endif
 
+#ifndef INTEL_AG6XX_UART
+#define INTEL_AG6XX_UART
+#endif
 /* Run-time configuration file */
 #ifndef VENDOR_LIB_CONF_FILE
-#define VENDOR_LIB_CONF_FILE "/etc/bluetooth/bt_vendor.conf"
+#define VENDOR_LIB_CONF_FILE "/system/etc/bluetooth/bt_vendor.conf"
 #endif
 
 /* Device port name where Bluetooth controller attached */
 #ifndef BLUETOOTH_UART_DEVICE_PORT
-#define BLUETOOTH_UART_DEVICE_PORT      "/dev/ttyO1"    /* maguro */
+#define BLUETOOTH_UART_DEVICE_PORT      "/dev/ttyBT0"    /* sofia_3g */
 #endif
 
 /* Location of firmware patch files */
 #ifndef FW_PATCHFILE_LOCATION
-#define FW_PATCHFILE_LOCATION "/vendor/firmware/"  /* maguro */
+#define FW_PATCHFILE_LOCATION "/system/etc/bluetooth/"  /* sofia_3g */
 #endif
 
 #ifndef UART_TARGET_BAUD_RATE
 #define UART_TARGET_BAUD_RATE           3000000
-#endif
-
-/* The millisecond delay pauses on HCI transport after firmware patches
- * were downloaded. This gives some time for firmware to restart with
- * patches before host attempts to send down any HCI commands.
- *
- * Note: It has been discovered that BCM43241B0 needs at least 200ms
- * settlement delay in here. Without the delay, a Hardware Error event
- * from BCM43241B0 had been seen in HCI upstream path right after the
- * host sent the HCI_VSC_SET_BDADDR commad to the controller at higher
- * baud.
- */
-#ifndef FW_PATCH_SETTLEMENT_DELAY_MS
-#define FW_PATCH_SETTLEMENT_DELAY_MS          0
 #endif
 
 /* The Bluetooth Device Aaddress source switch:
@@ -109,7 +109,7 @@
 #define LPM_SLEEP_MODE                  1
 #endif
 
-/* Host Stack Idle Threshold in 300ms or 25ms 
+/* Host Stack Idle Threshold in 300ms or 25ms
 
   In sleep mode 1, this is the number of firmware loops executed with no
     activity before the Host wake line is deasserted. Activity includes HCI
@@ -212,151 +212,12 @@
 
 /* SCO_CFG_INCLUDED
 
-    Do SCO configuration by default. If the firmware patch had been embedded
-    with desired SCO configuration, set this FALSE to bypass configuration
-    from host software.
+    SCO Configuration is not needed for AG6XX family chips.
 */
 #ifndef SCO_CFG_INCLUDED
-#define SCO_CFG_INCLUDED                TRUE
+#if defined INTEL_AG6XX_UART
+#define SCO_CFG_INCLUDED                FALSE
 #endif
-
-#ifndef SCO_USE_I2S_INTERFACE
-#define SCO_USE_I2S_INTERFACE           FALSE
-#endif
-
-#if (SCO_USE_I2S_INTERFACE == TRUE)
-#define SCO_I2SPCM_PARAM_SIZE           4
-
-/* SCO_I2SPCM_IF_MODE - 0=Disable, 1=Enable */
-#ifndef SCO_I2SPCM_IF_MODE
-#define SCO_I2SPCM_IF_MODE              1
-#endif
-
-/* SCO_I2SPCM_IF_ROLE - 0=Slave, 1=Master */
-#ifndef SCO_I2SPCM_IF_ROLE
-#define SCO_I2SPCM_IF_ROLE              1
-#endif
-
-/* SCO_I2SPCM_IF_SAMPLE_RATE
-
-    0 : 8K
-    1 : 16K
-    2 : 4K
-*/
-#ifndef SCO_I2SPCM_IF_SAMPLE_RATE
-#define SCO_I2SPCM_IF_SAMPLE_RATE       0
-#endif
-
-/* SCO_I2SPCM_IF_CLOCK_RATE
-
-    0 : 128K
-    1 : 256K
-    2 : 512K
-    3 : 1024K
-    4 : 2048K
-*/
-#ifndef SCO_I2SPCM_IF_CLOCK_RATE
-#define SCO_I2SPCM_IF_CLOCK_RATE        1
-#endif
-#endif // SCO_USE_I2S_INTERFACE
-
-
-#define SCO_PCM_PARAM_SIZE              5
-
-/* SCO_PCM_ROUTING
-
-    0 : PCM
-    1 : Transport
-    2 : Codec
-    3 : I2S
-*/
-#ifndef SCO_PCM_ROUTING
-#define SCO_PCM_ROUTING                 0
-#endif
-
-/* SCO_PCM_IF_CLOCK_RATE
-
-    0 : 128K
-    1 : 256K
-    2 : 512K
-    3 : 1024K
-    4 : 2048K
-*/
-#ifndef SCO_PCM_IF_CLOCK_RATE
-#define SCO_PCM_IF_CLOCK_RATE           4
-#endif
-
-/* SCO_PCM_IF_FRAME_TYPE - 0=Short, 1=Long */
-#ifndef SCO_PCM_IF_FRAME_TYPE
-#define SCO_PCM_IF_FRAME_TYPE           0
-#endif
-
-/* SCO_PCM_IF_SYNC_MODE - 0=Slave, 1=Master */
-#ifndef SCO_PCM_IF_SYNC_MODE
-#define SCO_PCM_IF_SYNC_MODE            0
-#endif
-
-/* SCO_PCM_IF_CLOCK_MODE - 0=Slave, 1=Master */
-#ifndef SCO_PCM_IF_CLOCK_MODE
-#define SCO_PCM_IF_CLOCK_MODE           0
-#endif
-
-#define PCM_DATA_FORMAT_PARAM_SIZE      5
-
-/* PCM_DATA_FMT_SHIFT_MODE
-
-    0 : MSB first
-    1 : LSB first
-*/
-#ifndef PCM_DATA_FMT_SHIFT_MODE
-#define PCM_DATA_FMT_SHIFT_MODE         0
-#endif
-
-/* PCM_DATA_FMT_FILL_BITS
-
-    Specifies the value with which to fill unused bits
-    if Fill_Method is set to programmable
-*/
-#ifndef PCM_DATA_FMT_FILL_BITS
-#define PCM_DATA_FMT_FILL_BITS          0
-#endif
-
-/* PCM_DATA_FMT_FILL_METHOD
-
-    0 : 0's
-    1 : 1's
-    2 : Signed
-    3 : Programmable
-*/
-#ifndef PCM_DATA_FMT_FILL_METHOD
-#define PCM_DATA_FMT_FILL_METHOD        3
-#endif
-
-/* PCM_DATA_FMT_FILL_NUM
-
-    Specifies the number of bits to be filled
-*/
-#ifndef PCM_DATA_FMT_FILL_NUM
-#define PCM_DATA_FMT_FILL_NUM           3
-#endif
-
-/* PCM_DATA_FMT_JUSTIFY_MODE
-
-    0 : Left justify (fill data shifted out last)
-    1 : Right justify (fill data shifted out first)
-*/
-#ifndef PCM_DATA_FMT_JUSTIFY_MODE
-#define PCM_DATA_FMT_JUSTIFY_MODE       0
-#endif
-
-/* HW_END_WITH_HCI_RESET
-
-    Sample code implementation of sending a HCI_RESET command during the epilog
-    process. It calls back to the callers after command complete of HCI_RESET
-    is received.
-*/
-#ifndef HW_END_WITH_HCI_RESET
-#define HW_END_WITH_HCI_RESET    TRUE
 #endif
 
 /******************************************************************************
@@ -365,5 +226,4 @@
 
 extern bt_vendor_callbacks_t *bt_vendor_cbacks;
 
-#endif /* BT_VENDOR_BRCM_H */
-
+#endif /* BT_VENDOR_H */
