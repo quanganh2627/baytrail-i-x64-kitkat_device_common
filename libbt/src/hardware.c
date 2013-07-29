@@ -1228,18 +1228,8 @@ uint8_t hw_lpm_enable(uint8_t turn_on)
 uint32_t hw_lpm_get_idle_timeout(void)
 {
     uint32_t timeout_ms;
-
-    /* set idle time to be LPM_IDLE_TIMEOUT_MULTIPLE times of
-     * host stack idle threshold (in 300ms/25ms)
-     */
-    timeout_ms = (uint32_t)lpm_param.host_stack_idle_threshold \
-                            * LPM_IDLE_TIMEOUT_MULTIPLE;
-
-/*    if (strstr(hw_cfg_cb.local_chip_name, "BCM4325") != NULL)
-        timeout_ms *= 25; // 12.5 or 25 ?
-    else
-        timeout_ms *= 300;
-*/
+    //TODO: read value from conf file. Now phase 1: hardcode it
+    timeout_ms = 25;
     return timeout_ms;
 }
 
@@ -1256,7 +1246,7 @@ void hw_lpm_set_wake_state(uint8_t wake_assert)
 {
     uint8_t state = (wake_assert) ? UPIO_ASSERT : UPIO_DEASSERT;
 
-    upio_set(UPIO_BT_WAKE, state, lpm_param.bt_wake_polarity);
+    //upio_set(UPIO_BT_WAKE, state, lpm_param.bt_wake_polarity);
 }
 
 #if (SCO_CFG_INCLUDED == TRUE)

@@ -43,16 +43,21 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <cutils/properties.h>
+#include <sys/socket.h>
+#include <linux/netlink.h>
+#include <poll.h>
+#include <pthread.h>
 #include "bt_vendor.h"
 #include "upio.h"
 #include "userial_vendor.h"
+#include "imc_idi_bt_ioctl.h"
 
 /******************************************************************************
 **  Constants & Macros
 ******************************************************************************/
 
 #ifndef UPIO_DBG
-#define UPIO_DBG FALSE
+#define UPIO_DBG TRUE
 #endif
 
 #if (UPIO_DBG == TRUE)
@@ -98,6 +103,21 @@ typedef struct
 static vnd_lpm_proc_cb_t lpm_proc_cb;
 #endif
 
+#if INTEL_AG6XX_UART == TRUE
+typedef struct
+{
+    pthread_t     netlink_thread;
+    pthread_mutex_t mutex;
+    pthread_cond_t  cond;
+    unsigned int netlink_fd;
+    unsigned int  CTS_state;
+} bt_netlink_cb_t;
+
+static bt_netlink_cb_t netlink_cb;
+
+
+#endif
+
 /******************************************************************************
 **  Static variables
 ******************************************************************************/
@@ -107,6 +127,11 @@ static int rfkill_id = -1;
 static int bt_emul_enable = 0;
 static char *rfkill_state_path = NULL;
 
+static unsigned int netlink_running;
+static struct sockaddr_nl dest_addr;
+static struct nlmsghdr *nlh = NULL;
+static struct iovec iov;
+static struct msghdr msg;
 /******************************************************************************
 **  Static functions
 ******************************************************************************/
@@ -124,6 +149,7 @@ static char *lpm_state[] = {
     "asserted"
 };
 
+enum netlink_message_code { HWUP_HIGH, HWUP_LOW, CTS_HIGH, CTS_LOW };
 /*****************************************************************************
 **   Bluetooth On/Off Static Functions
 *****************************************************************************/
@@ -248,6 +274,7 @@ void upio_cleanup(void)
 #endif
 }
 
+#if defined INTEL_WP2_UART
 /*******************************************************************************
 **
 ** Function        upio_set_bluetooth_power
@@ -322,177 +349,287 @@ int upio_set_bluetooth_power(int on)
 
     return ret;
 }
+#endif
 
-
+#if defined INTEL_AG6XX_UART
 /*******************************************************************************
 **
-** Function        upio_set
+** Function        upio_set_d_state
 **
-** Description     Set i/o based on polarity
+** Description     Set d states: d0,  d0i2, d0i3, d3
 **
 ** Returns         None
 **
 *******************************************************************************/
-void upio_set(uint8_t pio, uint8_t action, uint8_t polarity)
+void upio_set_d_state(uint8_t state)
 {
-    int rc;
-#if (BT_WAKE_VIA_PROC == TRUE)
-    int fd = -1;
-    char buffer;
-#endif
+    userial_vendor_ioctl(USERIAL_OP_SET_DEVICE_STATE, &state);
+}
 
-    switch (pio)
+/*******************************************************************************
+**
+** Function        upio_set_bt_wake_state
+**
+** Description     Set bt_wake high or low
+**
+** Returns         None
+**
+*******************************************************************************/
+uint8_t upio_set_bt_wake_state(uint8_t bt_wake_state)
+{
+    UPIODBG("--->%s..", __FUNCTION__);
+    userial_vendor_ioctl(USERIAL_OP_SET_BT_WAKE_UP, &bt_wake_state);
+    pthread_mutex_lock(&netlink_cb.mutex);
+    pthread_cond_wait(&netlink_cb.cond, &netlink_cb.mutex);
+    pthread_mutex_unlock(&netlink_cb.mutex);
+    return netlink_cb.CTS_state;
+
+}
+
+/*******************************************************************************
+**
+** Function        upio_get_cts_state
+**
+** Description     Set gets current CTS state
+**
+** Returns         None
+**
+*******************************************************************************/
+uint8_t upio_get_cts_state(void)
+{
+    UPIODBG("--->%s..", __FUNCTION__);
+    return userial_vendor_ioctl(USERIAL_OP_GET_CTS, NULL);
+}
+
+/*******************************************************************************
+**
+** Function        upio_set_rts_state
+**
+** Description     Set sets RTS state to high/low
+**
+** Returns         None
+**
+*******************************************************************************/
+void upio_set_rts_state(uint8_t rts_state)
+{
+    UPIODBG("--->%s..", __FUNCTION__);
+    userial_vendor_ioctl(USERIAL_OP_SET_RTS, &rts_state);
+}
+
+/*******************************************************************************
+**
+** Function       upio_create_netlink_socket
+**
+** Description    Create a NETLINK Socket
+**
+** Returns        netlinksocket fd
+**
+*******************************************************************************/
+#define MAX_PAYLOAD 2
+#define POLL_TIMEOUT 1000
+
+int upio_create_netlink_socket()
+{
+    struct sockaddr_nl src_addr;
+    UPIODBG("--->%s..", __FUNCTION__);
+    /* Grab a free socket */
+    netlink_cb.netlink_fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_USERSOCK);
+    UPIODBG("%s: sock_fd:%d\n", __func__,netlink_cb.netlink_fd);
+    /* Did we get a socket open? */
+    if(netlink_cb.netlink_fd < 0)
     {
-        case UPIO_LPM_MODE:
-            if (upio_state[UPIO_LPM_MODE] == action)
-            {
-                UPIODBG("LPM is %s already", lpm_mode[action]);
-                return;
-            }
+        UPIODBG("%s: sock_fd < 0 %d\n", __func__, errno);
+        return -1;
+    }
 
-            upio_state[UPIO_LPM_MODE] = action;
+    /* Init the Netlink struct */
+    memset(&src_addr, 0, sizeof(src_addr));
 
-#if (BT_WAKE_VIA_PROC == TRUE)
-            fd = open(VENDOR_LPM_PROC_NODE, O_WRONLY);
+    /* Set up a Netlink using our own Process ID */
+    src_addr.nl_family = AF_NETLINK;
+    src_addr.nl_pid = getpid();
+    src_addr.nl_groups = 0;
+    /* Bind the Netlink to our Socket */
+    bind(netlink_cb.netlink_fd, (struct sockaddr*)&src_addr, sizeof(src_addr));
+    UPIODBG("%s: pid:%d\n", __func__,src_addr.nl_pid);
 
-            if (fd < 0)
-            {
-                ALOGE("upio_set : open(%s) for write failed: %s (%d)",
-                        VENDOR_LPM_PROC_NODE, strerror(errno), errno);
-                return;
-            }
+    return netlink_cb.netlink_fd;
+}
 
-            if (action == UPIO_ASSERT)
-            {
-                buffer = '1';
-            }
-            else
-            {
-                buffer = '0';
+/*******************************************************************************
+**
+** Function       upio_netlink_send_msg
+**
+** Description    send a msg to kernel
+**
+** Returns        None
+**
+*******************************************************************************/
+void upio_netlink_send_msg()
+{
 
-                // delete btwrite assertion holding timer
-                if (lpm_proc_cb.timer_created == TRUE)
-                {
-                    timer_delete(lpm_proc_cb.timer_id);
-                    lpm_proc_cb.timer_created = FALSE;
-                }
-            }
+    UPIODBG("--->%s..", __FUNCTION__);
+    /* Init the destination Netlink struct */
+    memset(&dest_addr, 0, sizeof(dest_addr));
 
-            if (write(fd, &buffer, 1) < 0)
-            {
-                ALOGE("upio_set : write(%s) failed: %s (%d)",
-                        VENDOR_LPM_PROC_NODE, strerror(errno),errno);
-            }
-            else
-            {
-                if (action == UPIO_ASSERT)
-                {
-                    // create btwrite assertion holding timer
-                    if (lpm_proc_cb.timer_created == FALSE)
-                    {
-                        int status;
-                        struct sigevent se;
+    /* Set up the destination Netlink struct using unicast */
+    dest_addr.nl_family = AF_NETLINK;
+    dest_addr.nl_pid = 0;               /* For Linux Kernel */
+    dest_addr.nl_groups = 0;            /* unicast */
 
-                        se.sigev_notify = SIGEV_THREAD;
-                        se.sigev_value.sival_ptr = &lpm_proc_cb.timer_id;
-                        se.sigev_notify_function = proc_btwrite_timeout;
-                        se.sigev_notify_attributes = NULL;
+    /* Allocate memory for the Netlink message struct */
+    nlh = (struct nlmsghdr *)malloc(NLMSG_SPACE(MAX_PAYLOAD));
+    memset(nlh, 0, NLMSG_SPACE(MAX_PAYLOAD));
+    nlh->nlmsg_len = NLMSG_SPACE(MAX_PAYLOAD);
+    nlh->nlmsg_pid = getpid();
+    nlh->nlmsg_flags = 0;
 
-                        status = timer_create(CLOCK_MONOTONIC, &se,
-                                                &lpm_proc_cb.timer_id);
+    /* Inject our IPC message */
+    strcpy(NLMSG_DATA(nlh), "1");
 
-                        if (status == 0)
-                            lpm_proc_cb.timer_created = TRUE;
-                    }
-                }
-            }
-
-            if (fd >= 0)
-                close(fd);
-#endif
-            break;
-
-        case UPIO_BT_WAKE:
-            if (upio_state[UPIO_BT_WAKE] == action)
-            {
-                UPIODBG("BT_WAKE is %s already", lpm_state[action]);
-
-#if (BT_WAKE_VIA_PROC == TRUE)
-                if (lpm_proc_cb.btwrite_active == TRUE)
-                    /*
-                     * The proc btwrite node could have not been updated for
-                     * certain time already due to heavy downstream path flow.
-                     * In this case, we want to explicity touch proc btwrite
-                     * node to keep the bt_wake assertion in the LPM kernel
-                     * driver. The current kernel bluesleep LPM code starts
-                     * a 10sec internal in-activity timeout timer before it
-                     * attempts to deassert BT_WAKE line.
-                     */
-#endif
-                return;
-            }
-
-            upio_state[UPIO_BT_WAKE] = action;
-
-#if (BT_WAKE_VIA_USERIAL_IOCTL == TRUE)
-
-            userial_vendor_ioctl( ( (action==UPIO_ASSERT) ? \
-                      USERIAL_OP_ASSERT_BT_WAKE : USERIAL_OP_DEASSERT_BT_WAKE),\
-                      NULL);
-
-#elif (BT_WAKE_VIA_PROC == TRUE)
-
-            /*
-             *  Kick proc btwrite node only at UPIO_ASSERT
-             */
-            if (action == UPIO_DEASSERT)
-                return;
-
-            fd = open(VENDOR_BTWRITE_PROC_NODE, O_WRONLY);
-
-            if (fd < 0)
-            {
-                ALOGE("upio_set : open(%s) for write failed: %s (%d)",
-                        VENDOR_BTWRITE_PROC_NODE, strerror(errno), errno);
-                return;
-            }
-
-            buffer = '1';
-
-            if (write(fd, &buffer, 1) < 0)
-            {
-                ALOGE("upio_set : write(%s) failed: %s (%d)",
-                        VENDOR_BTWRITE_PROC_NODE, strerror(errno),errno);
-            }
-            else
-            {
-                lpm_proc_cb.btwrite_active = TRUE;
-
-                if (lpm_proc_cb.timer_created == TRUE)
-                {
-                    struct itimerspec ts;
-
-                    ts.it_value.tv_sec = PROC_BTWRITE_TIMER_TIMEOUT_MS/1000;
-                    ts.it_value.tv_nsec = 1000*(PROC_BTWRITE_TIMER_TIMEOUT_MS%1000);
-                    ts.it_interval.tv_sec = 0;
-                    ts.it_interval.tv_nsec = 0;
-
-                    timer_settime(lpm_proc_cb.timer_id, 0, &ts, 0);
-                }
-            }
-
-            UPIODBG("proc btwrite assertion");
-
-            if (fd >= 0)
-                close(fd);
-#endif
-
-            break;
-
-        case UPIO_HOST_WAKE:
-            UPIODBG("upio_set: UPIO_HOST_WAKE");
-            break;
+    iov.iov_base = (void *)nlh;
+    iov.iov_len = nlh->nlmsg_len;
+    memset(&msg, 0 ,sizeof(msg));
+    msg.msg_name = (void *)&dest_addr;
+    msg.msg_namelen = sizeof(dest_addr);
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+    UPIODBG("%s: sock_fd:%d\n", __func__,netlink_cb.netlink_fd);
+    if(sendmsg(netlink_cb.netlink_fd, &msg, 0) < 0)
+    {
+        ALOGE("%s: sendmsg() failed [errno=%u]\n", __func__, errno);
     }
 }
 
+/*******************************************************************************
+**
+** Function       upio_netlink_listen_msg
+**
+** Description    start a thread to listen netlink packets from kernel
+**
+** Returns        status of thread creation
+**
+*******************************************************************************/
+int upio_netlink_listen_thread(void)
+{
+    pthread_t recvmsgid;
+    int status;
+    UPIODBG("--->%s..", __FUNCTION__);
+    status = pthread_create( &recvmsgid, NULL, upio_netlink_receive_message, NULL);
+    if(status == 0)
+    {
+        netlink_running = TRUE;
+        pthread_mutex_init(&netlink_cb.mutex, NULL);
+        pthread_cond_init(&netlink_cb.cond, NULL);
+        UPIODBG(" upio_netlink_listen_thread created succesfully");
+    }else
+    {
+        UPIODBG(" upio_netlink_listen_thread creation failed")
+    }
+    return status;
+}
+
+/*******************************************************************************
+**
+** Function       upio_netlink_receive_message
+**
+** Description    thread to listen netlink packets from kernel
+**
+** Returns        None
+**
+*******************************************************************************/
+void * upio_netlink_receive_message(void *ptr)
+{
+
+    int signal;
+    struct pollfd fds[1];
+    int n;
+    UPIODBG("--->%s..", __FUNCTION__);
+    /* Allocate memory for the Netlink message struct */
+    nlh = (struct nlmsghdr *)malloc(NLMSG_SPACE(MAX_PAYLOAD));
+    memset(nlh, 0, NLMSG_SPACE(MAX_PAYLOAD));
+    nlh->nlmsg_len = NLMSG_SPACE(MAX_PAYLOAD);
+    nlh->nlmsg_pid = getpid();
+    nlh->nlmsg_flags = 0;
+
+    iov.iov_base = (void *)nlh;
+    iov.iov_len = nlh->nlmsg_len;
+    msg.msg_name = NULL;
+    msg.msg_namelen = 0;
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+    fds[0].fd = netlink_cb.netlink_fd;
+    fds[0].events = POLLIN | POLLERR | POLLRDNORM;
+
+
+    while(TRUE)
+    {
+        n = poll(fds, 1, POLL_TIMEOUT);
+        if(0 == n)
+        {
+            if(netlink_running == FALSE)
+                return NULL;
+            else
+                continue;
+        }else if(n < 0)
+        {
+            ALOGE("Netlink thread exiting ");
+            return NULL;
+        }
+
+        if( recvmsg(netlink_cb.netlink_fd, &msg, 0) < 0 )
+        {
+            ALOGE("%s: recvmsg() failed [errno=%u]\n", __func__, errno);
+        }
+        else
+        {
+            memcpy((void*)&signal,NLMSG_DATA(nlh),sizeof(unsigned int));
+            switch(signal)
+            {
+                case CTS_HIGH :
+                    {
+                    pthread_mutex_lock(&netlink_cb.mutex);
+                    pthread_cond_signal(&netlink_cb.cond);
+                    pthread_mutex_unlock(&netlink_cb.mutex);
+                    netlink_cb.CTS_state = CTS_HIGH;
+                    }
+                break;
+                case HWUP_HIGH:
+                    if(bt_vendor_cbacks)
+                      bt_vendor_cbacks->set_host_wake_state_cb(HWUP_HIGH);
+                break;
+                case HWUP_LOW:
+                    if(bt_vendor_cbacks)
+                      bt_vendor_cbacks->set_host_wake_state_cb(HWUP_LOW);
+                break;
+                case CTS_LOW:
+                    {
+                    pthread_mutex_lock(&netlink_cb.mutex);
+                    pthread_cond_signal(&netlink_cb.cond);
+                    pthread_mutex_unlock(&netlink_cb.mutex);
+                    netlink_cb.CTS_state = CTS_HIGH;
+                    }
+                break;
+            }
+        }
+    }
+}
+
+/*******************************************************************************
+**
+** Function       upio_close_netlink_socket
+**
+** Description    thread to listen netlink packets from kernel
+**
+** Returns        None
+**
+*******************************************************************************/
+void upio_close_netlink_socket()
+{
+    /* Cleanup the socket */
+    UPIODBG("--->%s..", __FUNCTION__);
+    netlink_running = FALSE;
+    close(netlink_cb.netlink_fd);
+}
+#endif
 

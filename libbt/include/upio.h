@@ -90,6 +90,7 @@ void upio_init(void);
 *******************************************************************************/
 void upio_cleanup(void);
 
+#if (INTEL_WP2_UART == TRUE || INTEL_WP2_USB == TRUE)
 /*******************************************************************************
 **
 ** Function        upio_set_bluetooth_power
@@ -102,17 +103,96 @@ void upio_cleanup(void);
 **
 *******************************************************************************/
 int upio_set_bluetooth_power(int on);
+#endif
 
+#if (INTEL_AG6XX_UART == TRUE)
 /*******************************************************************************
 **
-** Function        upio_set
+** Function        upio_set_d_state
 **
-** Description     Set i/o based on polarity
+** Description     Set d states: d0,  d0i2, d0i3, d3
 **
 ** Returns         None
 **
 *******************************************************************************/
-void upio_set(uint8_t pio, uint8_t action, uint8_t polarity);
+void upio_set_d_state(uint8_t state);
 
+/*******************************************************************************
+**
+** Function        upio_set_bt_wake_state
+**
+** Description     Set bt_wake high or low
+**
+** Returns         CTS state
+**
+*******************************************************************************/
+uint8_t upio_set_bt_wake_state(uint8_t bt_wake_state);
+
+/*******************************************************************************
+**
+** Function        upio_get_cts_state
+**
+** Description     Set gets current CTS state
+**
+** Returns         None
+**
+*******************************************************************************/
+uint8_t upio_get_cts_state(void);
+
+/*******************************************************************************
+**
+** Function        upio_set_rts_state
+**
+** Description     Set sets RTS state to high/low
+**
+** Returns         None
+**
+*******************************************************************************/
+void upio_set_rts_state(uint8_t rts_state);
+
+/*******************************************************************************
+**
+** Function       upio_create_netlink_socket
+**
+** Description    Create a NETLINK Socket
+**
+** Returns         netlinksocket fd
+**
+*******************************************************************************/
+int upio_create_netlink_socket(void);
+
+/*******************************************************************************
+**
+** Function       upio_netlink_send_msg
+**
+** Description    send a msg to kernel
+**
+** Returns        None
+**
+*******************************************************************************/
+void upio_netlink_send_msg();
+
+/*******************************************************************************
+**
+** Function       upio_netlink_receive_message
+**
+** Description    thread to listen netlink packets from kernel
+**
+** Returns        None
+**
+*******************************************************************************/
+void * upio_netlink_receive_message(void *ptr);
+
+/*******************************************************************************
+**
+** Function       upio_close_netlink_socket
+**
+** Description    thread to listen netlink packets from kernel
+**
+** Returns        None
+**
+*******************************************************************************/
+void upio_close_netlink_socket();
+#endif
 #endif /* UPIO_H */
 

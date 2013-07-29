@@ -61,7 +61,7 @@
 #endif
 
 #ifndef INTEL_AG6XX_UART
-#define INTEL_AG6XX_UART
+#define INTEL_AG6XX_UART TRUE
 #endif
 /* Run-time configuration file */
 #ifndef VENDOR_LIB_CONF_FILE

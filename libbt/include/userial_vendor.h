@@ -1,5 +1,14 @@
 /******************************************************************************
+ * Copyright (C) 2012-2013 Intel Mobile Communications GmbH
  *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
  *  Copyright (C) 2009-2012 Broadcom Corporation
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -72,22 +81,6 @@
 #define USERIAL_DATABITS_8      (1<<9)
 
 
-#if (BT_WAKE_VIA_USERIAL_IOCTL==TRUE)
-/* These are the ioctl values used for bt_wake ioctl via UART driver. you may
- * need to redefine them on you platform!
- * Logically they need to be unique and not colide with existing uart ioctl's.
- */
-#ifndef USERIAL_IOCTL_BT_WAKE_ASSERT
-#define USERIAL_IOCTL_BT_WAKE_ASSERT   0x8003
-#endif
-#ifndef USERIAL_IOCTL_BT_WAKE_DEASSERT
-#define USERIAL_IOCTL_BT_WAKE_DEASSERT 0x8004
-#endif
-#ifndef USERIAL_IOCTL_BT_WAKE_GET_ST
-#define USERIAL_IOCTL_BT_WAKE_GET_ST   0x8005
-#endif
-#endif // (BT_WAKE_VIA_USERIAL_IOCTL==TRUE)
-
 /******************************************************************************
 **  Type definitions
 ******************************************************************************/
@@ -100,10 +93,11 @@ typedef struct
 } tUSERIAL_CFG;
 
 typedef enum {
-#if (BT_WAKE_VIA_USERIAL_IOCTL==TRUE)
-    USERIAL_OP_ASSERT_BT_WAKE,
-    USERIAL_OP_DEASSERT_BT_WAKE,
-    USERIAL_OP_GET_BT_WAKE_STATE,
+#if defined INTEL_AG6XX_UART
+    USERIAL_OP_SET_DEVICE_STATE,
+    USERIAL_OP_SET_BT_WAKE_UP,
+    USERIAL_OP_GET_CTS,
+    USERIAL_OP_SET_RTS,
 #endif
     USERIAL_OP_NOP,
 } userial_vendor_ioctl_op_t;
@@ -166,10 +160,10 @@ void userial_vendor_set_baud(uint8_t userial_baud);
 **
 ** Description     ioctl inteface
 **
-** Returns         None
+** Returns         the ioctl return value
 **
 *******************************************************************************/
-void userial_vendor_ioctl(userial_vendor_ioctl_op_t op, void *p_data);
+int userial_vendor_ioctl(userial_vendor_ioctl_op_t op, void *p_data);
 
 #endif /* USERIAL_VENDOR_H */
 
