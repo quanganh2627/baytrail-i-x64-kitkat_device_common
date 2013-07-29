@@ -127,13 +127,37 @@ static int init(const bt_vendor_callbacks_t* p_cb, unsigned char *local_bdaddr)
     return 0;
 }
 
+#define CASE_RETURN_STR(const) case const: return #const;
+
+static const char* dump_vendor_op(bt_vendor_opcode_t opcode)
+{
+    switch(opcode)
+    {
+        CASE_RETURN_STR(BT_VND_OP_POWER_CTRL);
+        CASE_RETURN_STR(BT_VND_OP_FW_CFG);
+        CASE_RETURN_STR(BT_VND_OP_SCO_CFG);
+        CASE_RETURN_STR(BT_VND_OP_USERIAL_OPEN);
+        CASE_RETURN_STR(BT_VND_OP_LPM_SET_MODE);
+        CASE_RETURN_STR(BT_VND_OP_USERIAL_CLOSE);
+        CASE_RETURN_STR(BT_VND_OP_GET_LPM_IDLE_TIMEOUT);
+        CASE_RETURN_STR(BT_VND_OP_LPM_WAKE_SET_STATE);
+        CASE_RETURN_STR(BT_VND_OP_LPM_SET_DEVICE_STATE);
+        CASE_RETURN_STR(BT_VND_OP_LPM_SET_BT_WAKE_STATE);
+        CASE_RETURN_STR(BT_VND_OP_LPM_GET_CTS_STATE);
+        CASE_RETURN_STR(BT_VND_OP_LPM_SET_RTS_STATE);
+
+        default:
+            return "unknown opcode";
+    }
+
+}
 
 /** Requested operations */
 static int op(bt_vendor_opcode_t opcode, void *param)
 {
     int retval = 0;
 
-    BTVNDDBG("op for %d", opcode);
+    BTVNDDBG("op for %d named: %s", opcode,dump_vendor_op(opcode));
 
     switch(opcode)
     {
@@ -141,15 +165,18 @@ static int op(bt_vendor_opcode_t opcode, void *param)
             {
                 int *state = (int *) param;
                 if (*state == BT_VND_PWR_OFF)
+#if (INTEL_WP2_UART == TRUE || INTEL_WP2_USB == TRUE)
                     upio_set_bluetooth_power(UPIO_BT_POWER_OFF);
+#else
+                    ;
+#endif
                 else if (*state == BT_VND_PWR_ON)
                 {
-                    /*
-                     * Before power on the chip. Enable the callback
-                     * to receive the first default bd data event
-                     */
-                    register_int_evt_callback();
+#if (INTEL_WP2_UART == TRUE || INTEL_WP2_USB == TRUE)
                     upio_set_bluetooth_power(UPIO_BT_POWER_ON);
+#else
+                    ;
+#endif
                 }
             }
             break;
@@ -207,9 +234,33 @@ static int op(bt_vendor_opcode_t opcode, void *param)
 
         case BT_VND_OP_LPM_SET_MODE:
             {
-                uint8_t *mode = (uint8_t *) param;
-                //retval = hw_lpm_enable(*mode);
-                bt_vendor_cbacks->lpm_cb(BT_VND_OP_RESULT_SUCCESS);
+                uint8_t mode = *(uint8_t *) param;
+                BTVNDDBG("%s mode:%d", __func__, mode);
+                if( mode == BT_VND_LPM_ENABLE)
+                {
+                    /*
+                     * Before power on the chip. Enable the callback
+                     * to receive the first default bd data event
+                     */
+                    register_int_evt_callback();
+                    int netlinkfd = upio_create_netlink_socket();
+                    if(netlinkfd > 0)
+                    {
+                        upio_netlink_send_msg();
+                        int status = upio_netlink_listen_thread();
+                        if(bt_vendor_cbacks && (status == 0))
+                            bt_vendor_cbacks->lpm_cb(BT_VND_OP_RESULT_SUCCESS);
+                    }else
+                    {
+                        if(bt_vendor_cbacks)
+                            bt_vendor_cbacks->lpm_cb(BT_VND_OP_RESULT_FAIL);
+                    }
+
+                }
+                else
+                {
+                    upio_close_netlink_socket();
+                }
             }
             break;
 
@@ -220,6 +271,30 @@ static int op(bt_vendor_opcode_t opcode, void *param)
                                         TRUE : FALSE;
 
                 //hw_lpm_set_wake_state(wake_assert);
+            }
+            break;
+
+        case BT_VND_OP_LPM_SET_DEVICE_STATE:
+            {
+                uint8_t state = *(uint8_t*) param;
+                upio_set_d_state(state);
+            }
+            break;
+
+        case BT_VND_OP_LPM_SET_BT_WAKE_STATE:
+            {
+                uint8_t state = *(uint8_t*) param;
+                upio_set_bt_wake_state(state);
+            }
+            break;
+
+        case BT_VND_OP_LPM_GET_CTS_STATE:
+            return upio_get_cts_state();
+
+        case BT_VND_OP_LPM_SET_RTS_STATE:
+            {
+                uint8_t state = *(uint8_t*) param;
+                upio_set_rts_state(state);
             }
             break;
 
