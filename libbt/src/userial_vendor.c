@@ -135,31 +135,6 @@ uint8_t userial_to_tcio_baud(uint8_t cfg_baud, uint32_t *baud)
     return TRUE;
 }
 
-#if (BT_WAKE_VIA_USERIAL_IOCTL==TRUE)
-/*******************************************************************************
-**
-** Function        userial_ioctl_init_bt_wake
-**
-** Description     helper function to set the open state of the bt_wake if ioctl
-**                  is used. it should not hurt in the rfkill case but it might
-**                  be better to compile it out.
-**
-** Returns         none
-**
-*******************************************************************************/
-void userial_ioctl_init_bt_wake(int fd)
-{
-    uint32_t bt_wake_state;
-
-    /* assert BT_WAKE through ioctl */
-    ioctl(fd, USERIAL_IOCTL_BT_WAKE_ASSERT, NULL);
-    ioctl(fd, USERIAL_IOCTL_BT_WAKE_GET_ST, &bt_wake_state);
-    VNDUSERIALDBG("userial_ioctl_init_bt_wake read back BT_WAKE state=%i", \
-               bt_wake_state);
-}
-#endif // (BT_WAKE_VIA_USERIAL_IOCTL==TRUE)
-
-
 /*****************************************************************************
 **   Userial Vendor API Functions
 *****************************************************************************/
@@ -337,29 +312,34 @@ void userial_vendor_set_baud(uint8_t userial_baud)
 ** Returns         None
 **
 *******************************************************************************/
-void userial_vendor_ioctl(userial_vendor_ioctl_op_t op, void *p_data)
+int userial_vendor_ioctl(userial_vendor_ioctl_op_t op, void *p_data)
 {
+#if (INTEL_AG6XX_UART == TURE)
+    uint8_t* data;
+    if (p_data)
+        data = *(uint8_t*) p_data;
+#endif
     switch(op)
     {
-#if (BT_WAKE_VIA_USERIAL_IOCTL==TRUE)
-        case USERIAL_OP_ASSERT_BT_WAKE:
-            VNDUSERIALDBG("## userial_vendor_ioctl: Asserting BT_Wake ##");
-            ioctl(vnd_userial.fd, USERIAL_IOCTL_BT_WAKE_ASSERT, NULL);
-            break;
-
-        case USERIAL_OP_DEASSERT_BT_WAKE:
-            VNDUSERIALDBG("## userial_vendor_ioctl: De-asserting BT_Wake ##");
-            ioctl(vnd_userial.fd, USERIAL_IOCTL_BT_WAKE_DEASSERT, NULL);
-            break;
-
-        case USERIAL_OP_GET_BT_WAKE_STATE:
-            ioctl(vnd_userial.fd, USERIAL_IOCTL_BT_WAKE_GET_ST, p_data);
-            break;
-#endif  //  (BT_WAKE_VIA_USERIAL_IOCTL==TRUE)
-
+#if (INTEL_AG6XX_UART == TURE)
+        case USERIAL_OP_SET_DEVICE_STATE:
+            VNDUSERIALDBG("%s USERIAL_OP_SET_DEVICE_STATE: %d", __func__, \
+                                                                       data);
+            return ioctl(vnd_userial.fd, IMC_IDI_BT_SET_POWER_STATE, data);
+        case USERIAL_OP_SET_BT_WAKE_UP:
+            VNDUSERIALDBG("%s USERIAL_OP_SET_BT_WAKE_UP:%d", __func__, data);
+            return ioctl(vnd_userial.fd, IMC_IDI_BT_SET_BT_WUP, data);
+        case USERIAL_OP_GET_CTS:
+            VNDUSERIALDBG("%s USERIAL_OP_GET_CTS", __func__);
+            return ioctl(vnd_userial.fd, IMC_IDI_BT_GET_CTS, NULL);
+        case USERIAL_OP_SET_RTS:
+            VNDUSERIALDBG("%s USERIAL_OP_SET_RTS:%d", __func__, data);
+            return ioctl(vnd_userial.fd, IMC_IDI_BT_SET_RTS, data);
+#endif
         default:
             break;
     }
+    return 0;
 }
 
 /*******************************************************************************
