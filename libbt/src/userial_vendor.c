@@ -45,6 +45,7 @@
 #include "bt_vendor.h"
 #include "userial.h"
 #include "userial_vendor.h"
+#include "imc_idi_bt_ioctl.h"
 #include <errno.h>
 #include <string.h>
 
@@ -55,7 +56,7 @@
 #define VNDUSERIAL_DBG TRUE
 
 #ifndef VNDUSERIAL_DBG
-#define VNDUSERIAL_DBG FALSE
+#define VNDUSERIAL_DBG TRUE
 #endif
 
 #if (VNDUSERIAL_DBG == TRUE)
@@ -222,6 +223,7 @@ ALOGI("%s",__func__);
         return -1;
     }
 
+    ALOGI("%s userial vendor open: vnd_userial.fd:%d", __func__, vnd_userial.fd);
     tcgetattr(vnd_userial.fd, &vnd_userial.termios);
     vnd_userial.termios.c_cflag = B115200 | CS8 | CLOCAL | CRTSCTS; // Enable RTS CTS flow control
     cfmakeraw(&vnd_userial.termios);
@@ -314,20 +316,20 @@ void userial_vendor_set_baud(uint8_t userial_baud)
 *******************************************************************************/
 int userial_vendor_ioctl(userial_vendor_ioctl_op_t op, void *p_data)
 {
-#if (INTEL_AG6XX_UART == TURE)
+//#if (INTEL_AG6XX_UART == TRUE)
     uint8_t* data;
     if (p_data)
         data = *(uint8_t*) p_data;
-#endif
+//#endif
     switch(op)
     {
-#if (INTEL_AG6XX_UART == TURE)
+//#if (INTEL_AG6XX_UART == TRUE)
         case USERIAL_OP_SET_DEVICE_STATE:
             VNDUSERIALDBG("%s USERIAL_OP_SET_DEVICE_STATE: %d", __func__, \
                                                                        data);
             return ioctl(vnd_userial.fd, IMC_IDI_BT_SET_POWER_STATE, data);
         case USERIAL_OP_SET_BT_WAKE_UP:
-            VNDUSERIALDBG("%s USERIAL_OP_SET_BT_WAKE_UP:%d", __func__, data);
+            VNDUSERIALDBG("%s USERIAL_OP_SET_BT_WAKE_UP:%d fd:%d", __func__, data, vnd_userial.fd);
             return ioctl(vnd_userial.fd, IMC_IDI_BT_SET_BT_WUP, data);
         case USERIAL_OP_GET_CTS:
             VNDUSERIALDBG("%s USERIAL_OP_GET_CTS", __func__);
@@ -335,7 +337,7 @@ int userial_vendor_ioctl(userial_vendor_ioctl_op_t op, void *p_data)
         case USERIAL_OP_SET_RTS:
             VNDUSERIALDBG("%s USERIAL_OP_SET_RTS:%d", __func__, data);
             return ioctl(vnd_userial.fd, IMC_IDI_BT_SET_RTS, data);
-#endif
+//#endif
         default:
             break;
     }
