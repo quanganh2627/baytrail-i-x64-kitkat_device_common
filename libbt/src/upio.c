@@ -150,6 +150,10 @@ static char *lpm_state[] = {
 };
 
 enum netlink_message_code { HWUP_HIGH, HWUP_LOW, CTS_HIGH, CTS_LOW };
+enum {
+    LOW,
+    HIGH
+};
 /*****************************************************************************
 **   Bluetooth On/Off Static Functions
 *****************************************************************************/
@@ -380,10 +384,13 @@ uint8_t upio_set_bt_wake_state(uint8_t bt_wake_state)
     UPIODBG("--->%s..", __FUNCTION__);
     userial_vendor_ioctl(USERIAL_OP_SET_BT_WAKE_UP, &bt_wake_state);
     pthread_mutex_lock(&netlink_cb.mutex);
-    pthread_cond_wait(&netlink_cb.cond, &netlink_cb.mutex);
+    do
+    {
+        pthread_cond_wait(&netlink_cb.cond, &netlink_cb.mutex);
+        UPIODBG("%s netlink_cb.CTS_state:%d", __func__, netlink_cb.CTS_state);
+    } while(netlink_cb.CTS_state != bt_wake_state);
     pthread_mutex_unlock(&netlink_cb.mutex);
     return netlink_cb.CTS_state;
-
 }
 
 /*******************************************************************************
@@ -588,26 +595,28 @@ void * upio_netlink_receive_message(void *ptr)
             {
                 case CTS_HIGH :
                     {
-                    pthread_mutex_lock(&netlink_cb.mutex);
-                    pthread_cond_signal(&netlink_cb.cond);
-                    pthread_mutex_unlock(&netlink_cb.mutex);
-                    netlink_cb.CTS_state = CTS_HIGH;
+                        pthread_mutex_lock(&netlink_cb.mutex);
+                        pthread_cond_signal(&netlink_cb.cond);
+                        pthread_mutex_unlock(&netlink_cb.mutex);
+                        netlink_cb.CTS_state = HIGH;
+                        UPIODBG("%s  netlink_cb.CTS_state:%d", __func__, netlink_cb.CTS_state);
                     }
                 break;
                 case HWUP_HIGH:
                     if(bt_vendor_cbacks)
-                      bt_vendor_cbacks->set_host_wake_state_cb(HWUP_HIGH);
+                        bt_vendor_cbacks->set_host_wake_state_cb(HIGH);
                 break;
                 case HWUP_LOW:
                     if(bt_vendor_cbacks)
-                      bt_vendor_cbacks->set_host_wake_state_cb(HWUP_LOW);
+                        bt_vendor_cbacks->set_host_wake_state_cb(LOW);
                 break;
                 case CTS_LOW:
                     {
-                    pthread_mutex_lock(&netlink_cb.mutex);
-                    pthread_cond_signal(&netlink_cb.cond);
-                    pthread_mutex_unlock(&netlink_cb.mutex);
-                    netlink_cb.CTS_state = CTS_HIGH;
+                        pthread_mutex_lock(&netlink_cb.mutex);
+                        pthread_cond_signal(&netlink_cb.cond);
+                        pthread_mutex_unlock(&netlink_cb.mutex);
+                        netlink_cb.CTS_state = LOW;
+                        UPIODBG("%s  netlink_cb.CTS_state:%d", __func__, netlink_cb.CTS_state);
                     }
                 break;
             }

@@ -284,7 +284,8 @@ static int op(bt_vendor_opcode_t opcode, void *param)
         case BT_VND_OP_LPM_SET_BT_WAKE_STATE:
             {
                 uint8_t state = *(uint8_t*) param;
-                upio_set_bt_wake_state(state);
+                retval = upio_set_bt_wake_state(state);
+                BTVNDDBG("%s cts_state:%d", __func__, retval);
             }
             break;
 
