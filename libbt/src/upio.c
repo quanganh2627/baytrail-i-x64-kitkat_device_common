@@ -127,7 +127,7 @@ static int rfkill_id = -1;
 static int bt_emul_enable = 0;
 static char *rfkill_state_path = NULL;
 
-static unsigned int netlink_running;
+static volatile unsigned int netlink_running;
 static struct sockaddr_nl dest_addr;
 static struct nlmsghdr *nlh = NULL;
 static struct iovec iov;
@@ -572,13 +572,14 @@ void * upio_netlink_receive_message(void *ptr)
     while(TRUE)
     {
         n = poll(fds, 1, POLL_TIMEOUT);
-        if(0 == n)
+
+        if(netlink_running == FALSE)
         {
-            if(netlink_running == FALSE)
-                return NULL;
-            else
-                continue;
-        }else if(n < 0)
+            close(netlink_cb.netlink_fd);
+            return NULL;
+        }
+
+        if(n < 0)
         {
             ALOGE("Netlink thread exiting ");
             return NULL;
@@ -595,10 +596,10 @@ void * upio_netlink_receive_message(void *ptr)
             {
                 case CTS_HIGH :
                     {
+                        netlink_cb.CTS_state = HIGH;
                         pthread_mutex_lock(&netlink_cb.mutex);
                         pthread_cond_signal(&netlink_cb.cond);
                         pthread_mutex_unlock(&netlink_cb.mutex);
-                        netlink_cb.CTS_state = HIGH;
                         UPIODBG("%s  netlink_cb.CTS_state:%d", __func__, netlink_cb.CTS_state);
                     }
                 break;
@@ -612,10 +613,10 @@ void * upio_netlink_receive_message(void *ptr)
                 break;
                 case CTS_LOW:
                     {
+                        netlink_cb.CTS_state = LOW;
                         pthread_mutex_lock(&netlink_cb.mutex);
                         pthread_cond_signal(&netlink_cb.cond);
                         pthread_mutex_unlock(&netlink_cb.mutex);
-                        netlink_cb.CTS_state = LOW;
                         UPIODBG("%s  netlink_cb.CTS_state:%d", __func__, netlink_cb.CTS_state);
                     }
                 break;
@@ -638,7 +639,6 @@ void upio_close_netlink_socket()
     /* Cleanup the socket */
     UPIODBG("--->%s..", __FUNCTION__);
     netlink_running = FALSE;
-    close(netlink_cb.netlink_fd);
 }
 #endif
 
