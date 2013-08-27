@@ -46,7 +46,6 @@
 ******************************************************************************/
 
 void hw_config_start(void);
-void hw_config_cleanup(void);
 uint8_t hw_lpm_enable(uint8_t turn_on);
 uint32_t hw_lpm_get_idle_timeout(void);
 void hw_lpm_set_wake_state(uint8_t wake_assert);
@@ -129,11 +128,12 @@ static int op(bt_vendor_opcode_t opcode, void *param)
 {
     int retval = 0;
 
+    BTVNDDBG("op for %d", opcode);
+
     switch(opcode)
     {
         case BT_VND_OP_POWER_CTRL:
             {
-                BTVNDDBG("op: BT_VND_OP_POWER_CTRL");
                 int *state = (int *) param;
                 if (*state == BT_VND_PWR_OFF)
                     upio_set_bluetooth_power(UPIO_BT_POWER_OFF);
@@ -144,14 +144,12 @@ static int op(bt_vendor_opcode_t opcode, void *param)
 
         case BT_VND_OP_FW_CFG:
             {
-                BTVNDDBG("op: BT_VND_OP_FW_CFG");
                 hw_config_start();
             }
             break;
 
         case BT_VND_OP_SCO_CFG:
             {
-                BTVNDDBG("op: BT_VND_OP_SCO_CFG");
 #if (SCO_CFG_INCLUDED == TRUE)
                 hw_sco_config();
 #else
@@ -162,7 +160,6 @@ static int op(bt_vendor_opcode_t opcode, void *param)
 
         case BT_VND_OP_USERIAL_OPEN:
             {
-                BTVNDDBG("op: BT_VND_OP_USERIAL_OPEN");
                 int (*fd_array)[] = (int (*)[]) param;
                 int fd, idx;
                 fd = userial_vendor_open((tUSERIAL_CFG *) &userial_init_cfg);
@@ -179,14 +176,12 @@ static int op(bt_vendor_opcode_t opcode, void *param)
 
         case BT_VND_OP_USERIAL_CLOSE:
             {
-                BTVNDDBG("op: BT_VND_OP_USERIAL_CLOSE");
                 userial_vendor_close();
             }
             break;
 
         case BT_VND_OP_GET_LPM_IDLE_TIMEOUT:
             {
-                BTVNDDBG("op: BT_VND_OP_GET_LPM_IDLE_TIMEOUT");
                 uint32_t *timeout_ms = (uint32_t *) param;
                 *timeout_ms = hw_lpm_get_idle_timeout();
             }
@@ -194,7 +189,6 @@ static int op(bt_vendor_opcode_t opcode, void *param)
 
         case BT_VND_OP_LPM_SET_MODE:
             {
-                BTVNDDBG("op: BT_VND_OP_LPM_SET_MODE");
                 uint8_t *mode = (uint8_t *) param;
                 retval = hw_lpm_enable(*mode);
             }
@@ -220,7 +214,6 @@ static void cleanup( void )
     BTVNDDBG("cleanup");
 
     upio_cleanup();
-    hw_config_cleanup();
 
     bt_vendor_cbacks = NULL;
 }
