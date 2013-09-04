@@ -42,8 +42,6 @@
 #include "upio.h"
 #include "userial_vendor.h"
 
-#define BTVND_DBG TRUE
-
 #ifndef BTVND_DBG
 #define BTVND_DBG FALSE
 #endif
@@ -62,7 +60,7 @@ void hw_config_start(void);
 #endif
 uint8_t register_int_evt_callback();
 uint8_t hw_lpm_enable(uint8_t turn_on);
-uint32_t hw_lpm_get_idle_timeout(void);
+void hw_lpm_get_lpm_param(void* param);
 void hw_lpm_set_wake_state(uint8_t wake_assert);
 void vnd_load_conf(const char *p_path);
 #if (SCO_CFG_INCLUDED == TRUE)
@@ -71,6 +69,8 @@ void hw_sco_config(void);
 #if (HW_END_WITH_HCI_RESET == TRUE)
 void hw_epilog_process(void);
 #endif
+
+extern uint8_t signaling_is_enabled;
 
 /******************************************************************************
 **  Variables
@@ -227,14 +227,14 @@ static int op(bt_vendor_opcode_t opcode, void *param)
 
         case BT_VND_OP_GET_LPM_IDLE_TIMEOUT:
             {
-                uint32_t *timeout_ms = (uint32_t *) param;
-                *timeout_ms = hw_lpm_get_idle_timeout();
+                hw_lpm_get_lpm_param(param);
             }
             break;
 
         case BT_VND_OP_LPM_SET_MODE:
             {
                 uint8_t mode = *(uint8_t *) param;
+                uint8_t device_state;
                 BTVNDDBG("%s mode:%d", __func__, mode);
                 if( mode == BT_VND_LPM_ENABLE)
                 {
@@ -243,6 +243,16 @@ static int op(bt_vendor_opcode_t opcode, void *param)
                      * to receive the first default bd data event
                      */
                     register_int_evt_callback();
+                    if (signaling_is_enabled == FALSE)
+                    {
+                        device_state = 0; /* State value for D0 */
+                        /* first event is yet to come */
+                        BTVNDDBG("%s signaling is disabled from conf file.", __func__);
+                        retval = -1;
+                        userial_vendor_ioctl(USERIAL_OP_DISABLE_SIGNALING, NULL);
+                        upio_set_d_state(device_state);
+                        break;
+                    }
                     int netlinkfd = upio_create_netlink_socket();
                     if(netlinkfd > 0)
                     {
@@ -259,6 +269,11 @@ static int op(bt_vendor_opcode_t opcode, void *param)
                 }
                 else
                 {
+                    if (signaling_is_enabled == FALSE)
+                    {
+                        device_state = 5;
+                        upio_set_d_state(device_state);
+                    }
                     upio_close_netlink_socket();
                 }
             }

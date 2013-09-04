@@ -139,7 +139,8 @@ pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 typedef enum
 {
     FAILURE = -1,
-    SUCCESS = 0
+    SUCCESS = 0,
+    IGNORE = 2  /* ignore the result in the caller */
 } return_value;
 
 /* Hardware Configuration State */
@@ -207,6 +208,7 @@ static int fw_patchfile_empty = 0;
 #endif
 static char fw_patchfile_path[256] = FW_PATCHFILE_LOCATION;
 static char fw_patchfile_name[128] = { 0 };
+uint8_t signaling_is_enabled = TRUE;
 #if (VENDOR_LIB_RUNTIME_TUNING_ENABLED == TRUE)
 static int fw_patch_settlement_delay = -1;
 #endif
@@ -229,6 +231,12 @@ static bt_lpm_param_t lpm_param =
     LPM_PULSED_HOST_WAKE
 };
 
+/* LPM params */
+static uint32_t idle_timeout                        = 300;
+static uint32_t pkt_rate_monitor_period             = 100;
+static uint32_t pkt_rate_monitor_threshold          = 10;
+static uint8_t  pkt_rate_monitor_correction_factor  = 5;
+static uint32_t wakeup_time                         = 300;
 /******************************************************************************
 **  Global functions
 ******************************************************************************/
@@ -252,6 +260,29 @@ uint8_t register_int_evt_callback()
 /******************************************************************************
 **  Controller Initialization Static Functions
 ******************************************************************************/
+/*******************************************************************************
+**
+** Function        hw_read_conf_value
+**
+** Description     Reads conf value to long int. If error then puts default value
+**
+** Returns         0 : Success
+**                 Otherwise : Fail
+**
+*******************************************************************************/
+static long hw_read_conf_value(char *str, long default_value)
+{
+    char *endptr;
+    long ret;
+    ret = strtol(str, &endptr , 10);
+    if (str == endptr)
+    {
+        /* no value provided. Error? provide a default value */
+        ret = default_value;
+    }
+    return ret;
+}
+
 /*******************************************************************************
 **
 ** Function        check_event
@@ -707,7 +738,14 @@ void hw_config_cback(void *p_mem)
     p_evt_buf = (HC_BT_HDR *) p_mem;
     p = (uint8_t*)(p_evt_buf+1);
     status = check_event(p);
-
+    if (status == IGNORE)
+    {
+        BTHWDBG("%s event ignored", __func__);
+        if (bt_vendor_cbacks)
+            bt_vendor_cbacks->dealloc(p_evt_buf);
+        pthread_mutex_unlock( &mutex );
+        return;
+    }
     BTHWDBG("p_evt_buf->event:0x%x p_evt_buf->len:0x%x p_evt_buf->offset:0x%x p_evt_buf->layer_specific:0x%x",\
         p_evt_buf->event, p_evt_buf->len, p_evt_buf->offset, p_evt_buf->layer_specific);
     BTHWDBG("status:%u p:%x",status, *p);
@@ -1218,19 +1256,21 @@ uint8_t hw_lpm_enable(uint8_t turn_on)
 
 /*******************************************************************************
 **
-** Function        hw_lpm_get_idle_timeout
+** Function        hw_lpm_get_lpm_param
 **
 ** Description     Calculate idle time based on host stack idle threshold
 **
 ** Returns         idle timeout value
 **
 *******************************************************************************/
-uint32_t hw_lpm_get_idle_timeout(void)
+void hw_lpm_get_lpm_param(void* param)
 {
-    uint32_t timeout_ms;
-    //TODO: read value from conf file. Now phase 1: hardcode it
-    timeout_ms = 25;
-    return timeout_ms;
+    bt_vendor_lpm_param_t* p_param = (bt_vendor_lpm_param_t*) param;
+    p_param->idle_timeout = idle_timeout;
+    p_param->pkt_rate_monitor_period = pkt_rate_monitor_period;
+    p_param->pkt_rate_monitor_threshold = pkt_rate_monitor_threshold;
+    p_param->pkt_rate_monitor_correction_factor = pkt_rate_monitor_correction_factor;
+    p_param->wakeup_time = wakeup_time;
 }
 
 /*******************************************************************************
@@ -1283,6 +1323,110 @@ int hw_set_patch_file_path(char *p_conf_name, char *p_conf_value, int param)
     return 0;
 }
 
+/*******************************************************************************
+**
+** Function        hw_is_signaling_enabled
+**
+** Description     Sets if lpm is enabled
+**
+** Returns         0 : Success
+**                 Otherwise : Fail
+**
+*******************************************************************************/
+int hw_is_signaling_enabled(char *p_conf_name, char *p_conf_value, int param)
+{
+    BTHWDBG("%s conf_value:%s", __func__, p_conf_value);
+    if (strcmp(p_conf_value, "true") == 0)
+    {
+        signaling_is_enabled = TRUE;
+    }
+    else if (strcmp(p_conf_value, "false") == 0)
+    {
+        signaling_is_enabled = FALSE;
+    }
+    return 0;
+}
+
+/*******************************************************************************
+**
+** Function        hw_read_idle_timeout
+**
+** Description     Reads idle timeout
+**
+** Returns         0 : Success
+**                 Otherwise : Fail
+**
+*******************************************************************************/
+int hw_read_idle_timeout(char *p_conf_name, char *p_conf_value, int param)
+{
+    idle_timeout = hw_read_conf_value(p_conf_value, 300);
+    return 0;
+}
+
+/*******************************************************************************
+**
+** Function        hw_read_pkt_rate_monitor_period
+**
+** Description     Reads pkt rate monitor period
+**
+** Returns         0 : Success
+**                 Otherwise : Fail
+**
+*******************************************************************************/
+int hw_read_pkt_rate_monitor_period(char *p_conf_name, char *p_conf_value, int param)
+{
+    pkt_rate_monitor_period = hw_read_conf_value(p_conf_value, 100);
+    return 0;
+}
+
+/*******************************************************************************
+**
+** Function        hw_read_pkt_rate_monitor_threshold
+**
+** Description     Reads idle timeout
+**
+** Returns         0 : Success
+**                 Otherwise : Fail
+**
+*******************************************************************************/
+int hw_read_pkt_rate_monitor_threshold(char *p_conf_name, char *p_conf_value, int param)
+{
+    pkt_rate_monitor_threshold = hw_read_conf_value(p_conf_value, 10);
+    return 0;
+}
+
+/*******************************************************************************
+**
+** Function        hw_read_pkt_rate_monitor_correction_factor
+**
+** Description     Reads idle timeout
+**
+** Returns         0 : Success
+**                 Otherwise : Fail
+**
+*******************************************************************************/
+int hw_read_pkt_rate_monitor_correction_factor
+                            (char *p_conf_name, char *p_conf_value, int param)
+{
+    pkt_rate_monitor_correction_factor = hw_read_conf_value(p_conf_value, 5);
+    return 0;
+}
+
+/*******************************************************************************
+**
+** Function        hw_read_wakeup_time
+**
+** Description     Reads system wakeup time from D0I3 to D0
+**
+** Returns         0 : Success
+**                 Otherwise : Fail
+**
+*******************************************************************************/
+int hw_read_wakeup_time(char *p_conf_name, char *p_conf_value, int param)
+{
+    wakeup_time = hw_read_conf_value(p_conf_value, 300);
+    return 0;
+}
 /*******************************************************************************
 **
 ** Function        hw_set_patch_file_name

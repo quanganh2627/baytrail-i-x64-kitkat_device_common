@@ -381,14 +381,12 @@ void upio_set_d_state(uint8_t state)
 *******************************************************************************/
 uint8_t upio_set_bt_wake_state(uint8_t bt_wake_state)
 {
-    UPIODBG("--->%s..", __FUNCTION__);
+    UPIODBG("--->%s.. state:%d", __FUNCTION__, bt_wake_state);
     userial_vendor_ioctl(USERIAL_OP_SET_BT_WAKE_UP, &bt_wake_state);
     pthread_mutex_lock(&netlink_cb.mutex);
-    do
-    {
-        pthread_cond_wait(&netlink_cb.cond, &netlink_cb.mutex);
-        UPIODBG("%s netlink_cb.CTS_state:%d", __func__, netlink_cb.CTS_state);
-    } while(netlink_cb.CTS_state != bt_wake_state);
+        if (bt_wake_state != netlink_cb.CTS_state)
+            pthread_cond_wait(&netlink_cb.cond, &netlink_cb.mutex);
+    UPIODBG("%s netlink_cb.CTS_state:%d", __func__, netlink_cb.CTS_state);
     pthread_mutex_unlock(&netlink_cb.mutex);
     return netlink_cb.CTS_state;
 }
@@ -536,6 +534,18 @@ int upio_netlink_listen_thread(void)
     return status;
 }
 
+pthread_mutex_t mutex1 = PTHREAD_MUTEX_INITIALIZER;
+
+void *thread_function(void *p_state)
+{
+    int state = *((int*) p_state);
+    pthread_mutex_lock( &mutex1 );
+    if(bt_vendor_cbacks)
+        bt_vendor_cbacks->set_host_wake_state_cb(state);
+    pthread_mutex_unlock( &mutex1 );
+    return NULL;
+}
+
 /*******************************************************************************
 **
 ** Function       upio_netlink_receive_message
@@ -551,6 +561,8 @@ void * upio_netlink_receive_message(void *ptr)
     int signal;
     struct pollfd fds[1];
     int n;
+    pthread_t thread_id;
+    int host_wake_state;
     UPIODBG("--->%s..", __FUNCTION__);
     /* Allocate memory for the Netlink message struct */
     nlh = (struct nlmsghdr *)malloc(NLMSG_SPACE(MAX_PAYLOAD));
@@ -592,6 +604,7 @@ void * upio_netlink_receive_message(void *ptr)
         else
         {
             memcpy((void*)&signal,NLMSG_DATA(nlh),sizeof(unsigned int));
+            UPIODBG("--->%s.. signal:%d", __FUNCTION__, signal);
             switch(signal)
             {
                 case CTS_HIGH :
@@ -604,12 +617,14 @@ void * upio_netlink_receive_message(void *ptr)
                     }
                 break;
                 case HWUP_HIGH:
-                    if(bt_vendor_cbacks)
-                        bt_vendor_cbacks->set_host_wake_state_cb(HIGH);
+                    host_wake_state = HIGH;
+                    UPIODBG("%s host_wake_state:%d", __func__, host_wake_state);
+                    pthread_create(&thread_id, NULL, thread_function, (void*)&host_wake_state);
                 break;
                 case HWUP_LOW:
-                    if(bt_vendor_cbacks)
-                        bt_vendor_cbacks->set_host_wake_state_cb(LOW);
+                    host_wake_state = LOW;
+                    UPIODBG("%s host_wake_state:%d", __func__, host_wake_state);
+                    pthread_create(&thread_id, NULL, thread_function, (void*)&host_wake_state);
                 break;
                 case CTS_LOW:
                     {
