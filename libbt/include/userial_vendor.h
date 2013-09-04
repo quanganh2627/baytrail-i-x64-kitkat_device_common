@@ -98,6 +98,7 @@ typedef enum {
     USERIAL_OP_SET_BT_WAKE_UP,
     USERIAL_OP_GET_CTS,
     USERIAL_OP_SET_RTS,
+    USERIAL_OP_DISABLE_SIGNALING,
 #endif
     USERIAL_OP_NOP,
 } userial_vendor_ioctl_op_t;

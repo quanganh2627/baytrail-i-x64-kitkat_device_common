@@ -48,6 +48,14 @@
 int userial_set_port(char *p_conf_name, char *p_conf_value, int param);
 int hw_set_patch_file_path(char *p_conf_name, char *p_conf_value, int param);
 int hw_set_patch_file_name(char *p_conf_name, char *p_conf_value, int param);
+int hw_is_signaling_enabled(char *p_conf_name, char *p_conf_value, int param);
+int hw_read_idle_timeout(char *p_conf_name, char *p_conf_value, int param);
+int hw_read_pkt_rate_monitor_period(char *p_conf_name, char *p_conf_value, int param);
+int hw_read_pkt_rate_monitor_threshold(char *p_conf_name, char *p_conf_value, int param);
+int hw_read_pkt_rate_monitor_correction_factor
+                            (char *p_conf_name, char *p_conf_value, int param);
+int hw_read_wakeup_time(char *p_conf_name, char *p_conf_value, int param);
+
 #if (VENDOR_LIB_RUNTIME_TUNING_ENABLED == TRUE)
 int hw_set_patch_settlement_delay(char *p_conf_name, char *p_conf_value, int param);
 #endif
@@ -81,6 +89,12 @@ static const conf_entry_t conf_table[] = {
     {"UartPort", userial_set_port, 0},
     {"FwPatchFilePath", hw_set_patch_file_path, 0},
     {"FwPatchFileName", hw_set_patch_file_name, 0},
+    {"SignalingEnabled", hw_is_signaling_enabled, 0},
+    {"IdleTimeout", hw_read_idle_timeout, 0},
+    {"PacketRateMonitorPeriod", hw_read_pkt_rate_monitor_period, 0},
+    {"PacketRateMonitorThreshold", hw_read_pkt_rate_monitor_threshold, 0},
+    {"PacketRateMonitorCorrection", hw_read_pkt_rate_monitor_correction_factor, 0},
+    {"D0I3WakeupTime", hw_read_wakeup_time, 0},
 #if (VENDOR_LIB_RUNTIME_TUNING_ENABLED == TRUE)
     {"FwPatchSettlementDelay", hw_set_patch_settlement_delay, 0},
 #endif
