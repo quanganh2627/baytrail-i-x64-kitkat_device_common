@@ -328,6 +328,9 @@ int userial_vendor_ioctl(userial_vendor_ioctl_op_t op, void *p_data)
         case USERIAL_OP_DISABLE_SIGNALING:
             VNDUSERIALDBG("%s USERIAL_OP_DISABLE_SIGNALING", __func__);
             return ioctl(vnd_userial.fd, IMC_IDI_BT_DISABLE_SIGNALING, data);
+        case USERIAL_OP_SET_FWCFG_REG:
+            VNDUSERIALDBG("%s USERIAL_OP_SET_FWCFG_REG", __func__);
+            return ioctl(vnd_userial.fd, IMC_IDI_BT_SET_SCU_FWCTL, data);
         default:
             break;
     }

@@ -185,6 +185,8 @@ typedef struct
     uint8_t pulsed_host_wake;               /* pulsed host wake if mode = 1 */
 } bt_lpm_param_t;
 
+uint8_t fw_cfg_reg_value = 0xff;
+
 /******************************************************************************
 **  Externs
 ******************************************************************************/
@@ -1433,6 +1435,31 @@ int hw_set_patch_file_name(char *p_conf_name, char *p_conf_value, int param)
 
     strcpy(fw_patchfile_name, p_conf_value);
 
+    return 0;
+}
+
+/*******************************************************************************
+**
+** Function        hw_set_fw_ctl_reg
+**
+** Description     Configures the value of the fw register
+**
+** Returns         0 : Success
+**                 Otherwise : Fail
+**
+*******************************************************************************/
+int hw_set_fw_ctl_reg(char *p_conf_name, char *p_conf_value, int param)
+{
+    char* end_ptr;
+    unsigned long l = -1;
+    if (p_conf_value != NULL)
+    {
+        /* Get the hex from string */
+        l = strtol(p_conf_value, &end_ptr, 16);
+        if (*end_ptr)
+            l = 0xff;
+        fw_cfg_reg_value = l;
+    }
     return 0;
 }
 
