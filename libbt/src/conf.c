@@ -46,6 +46,7 @@ int hw_read_pkt_rate_monitor_threshold(char *p_conf_name, char *p_conf_value, in
 int hw_read_pkt_rate_monitor_correction_factor
                             (char *p_conf_name, char *p_conf_value, int param);
 int hw_read_wakeup_time(char *p_conf_name, char *p_conf_value, int param);
+int hw_set_fw_ctl_reg(char *p_conf_name, char *p_conf_value, int param);
 
 #if (VENDOR_LIB_RUNTIME_TUNING_ENABLED == TRUE)
 int hw_set_patch_settlement_delay(char *p_conf_name, char *p_conf_value, int param);
@@ -86,6 +87,7 @@ static const conf_entry_t conf_table[] = {
     {"PacketRateMonitorThreshold", hw_read_pkt_rate_monitor_threshold, 0},
     {"PacketRateMonitorCorrection", hw_read_pkt_rate_monitor_correction_factor, 0},
     {"D0I3WakeupTime", hw_read_wakeup_time, 0},
+    {"SetFwCtlRegister", hw_set_fw_ctl_reg, 0},
 #if (VENDOR_LIB_RUNTIME_TUNING_ENABLED == TRUE)
     {"FwPatchSettlementDelay", hw_set_patch_settlement_delay, 0},
 #endif

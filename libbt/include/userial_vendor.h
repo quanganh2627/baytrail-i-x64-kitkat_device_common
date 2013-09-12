@@ -91,6 +91,7 @@ typedef enum {
     USERIAL_OP_GET_CTS,
     USERIAL_OP_SET_RTS,
     USERIAL_OP_DISABLE_SIGNALING,
+    USERIAL_OP_SET_FWCFG_REG,
 #endif
     USERIAL_OP_NOP,
 } userial_vendor_ioctl_op_t;

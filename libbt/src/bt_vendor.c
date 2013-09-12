@@ -62,6 +62,7 @@ void hw_epilog_process(void);
 #endif
 
 extern uint8_t signaling_is_enabled;
+extern uint8_t fw_cfg_reg_value;
 
 /******************************************************************************
 **  Variables
@@ -87,6 +88,28 @@ static const tUSERIAL_CFG userial_init_cfg =
 /******************************************************************************
 **  Functions
 ******************************************************************************/
+/* Sets Firmware config register value from bt_vendor.conf configuration */
+void set_fw_config_reg(uint8_t val)
+{
+    if (val == 0xff)
+    {
+        BTVNDDBG("%s Nothing specified.", __func__);
+    }
+    else if (val == 0xf0 || val == 0xf4)
+    {
+        userial_vendor_ioctl(USERIAL_OP_SET_FWCFG_REG, &val);
+    }
+    else if (!(val & 0x20))
+    {
+        ALOGE("%s For turning off signaling, please use the SignalingEnabled flag in bt_vendor.conf"
+        , __func__);
+    }
+    else
+    {
+        ALOGE("%s Not allowed to change the specified bit(s), please refer to FW spec for details"
+        , __func__);
+    }
+}
 
 /*****************************************************************************
 **
@@ -234,6 +257,8 @@ static int op(bt_vendor_opcode_t opcode, void *param)
                      * to receive the first default bd data event
                      */
                     register_int_evt_callback();
+                    /* Call setFwCfg reg */
+                    set_fw_config_reg(fw_cfg_reg_value);
                     if (signaling_is_enabled == FALSE)
                     {
                         device_state = 0; /* State value for D0 */
