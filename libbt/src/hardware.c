@@ -68,7 +68,7 @@
 
 #if defined INTEL_AG6XX_UART
 #define FW_PATCHFILE_EXTENSION      ".pbn"
-#define BDDATA_FILE                 "/system/etc/bluetooth/bddata"
+#define BDDATA_FILE                 "/nvm_fs_partition/bluetooth/bddata"
 #else
 #define FW_PATCHFILE_EXTENSION      ".seq"
 #endif
@@ -201,6 +201,7 @@ static int fw_patchfile_empty = 0;
 #endif
 static char fw_patchfile_path[256] = FW_PATCHFILE_LOCATION;
 static char fw_patchfile_name[128] = { 0 };
+static char bd_datafile_name[128] = { 0 };
 uint8_t signaling_is_enabled = TRUE;
 #if (VENDOR_LIB_RUNTIME_TUNING_ENABLED == TRUE)
 static int fw_patch_settlement_delay = -1;
@@ -588,26 +589,36 @@ int open_bddata(uint8_t *p)
     size_t cmd_size;
 
     BTHWDBG("%s",__func__);
-    fp = fopen(BDDATA_FILE, "rb");
+    if (strlen(bd_datafile_name) > 0)
+    {
+        BTHWDBG("BD Data File Name from Config File: %s", bd_datafile_name);
+        fp = fopen(bd_datafile_name, "rb");
+    }
+    else
+    {
+        fp = fopen(BDDATA_FILE, "rb");
+    }
+
     if (fp == NULL)
     {
-        ALOGE("cannot open:%s",BDDATA_FILE);
+        ALOGE("cannot open: %s from CONFIG File or Path Defined",BDDATA_FILE);
         return FAILURE;
-       }
+    }
+    BTHWDBG("FILE: %s SUCCESSFULLY OPENED",bd_datafile_name);
     line = (uint8_t*) malloc (1024 * sizeof (uint8_t));
     if (line == NULL)
     {
         ALOGE("Malloc failure");
         return FAILURE;
     }
-       read = fread(line, sizeof(unsigned char), 1024, fp);
-       if (read < 0)
-       {
-           ALOGE("line is not read properly. read:%d errno:%d strerror:%s", read, errno, strerror(errno));
-           free(line);
-           return FAILURE;
+    read = fread(line, sizeof(unsigned char), 1024, fp);
+    if (read < 0)
+    {
+        ALOGE("line is not read properly. read:%d errno:%d strerror:%s", read, errno, strerror(errno));
+        free(line);
+        return FAILURE;
     }
-       line[read] = '\0';
+    line[read] = '\0';
     cmd_size = read;
     for(i=0; i<cmd_size; i++)
     {
@@ -621,6 +632,7 @@ int open_bddata(uint8_t *p)
             c = char_to_hex(line[i]) << 4;
         }
     }
+    BTHWDBG("FILE: %s READ SUCCESSFUL",bd_datafile_name);
     if (line)
         free(line);
     fclose(fp);
@@ -1434,6 +1446,24 @@ int hw_set_patch_file_name(char *p_conf_name, char *p_conf_value, int param)
 {
 
     strcpy(fw_patchfile_name, p_conf_value);
+
+    return 0;
+}
+
+/*******************************************************************************
+**
+** Function        hw_set_bddata_file_name
+**
+** Description     Give the specific BD Data filename
+**
+** Returns         0 : Success
+**                 Otherwise : Fail
+**
+*******************************************************************************/
+int hw_set_bddata_file_name(char *p_conf_name, char *p_conf_value, int param)
+{
+
+    strcpy(bd_datafile_name, p_conf_value);
 
     return 0;
 }
