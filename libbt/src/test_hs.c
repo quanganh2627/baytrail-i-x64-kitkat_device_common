@@ -140,14 +140,14 @@ int byte2int(unsigned char c)
 void parse_cmd(int fd, char* cmd_str)
 {
     struct timeval timeout;
-    char n;
+    int n;
+    unsigned int i;
+    unsigned char c;
     // initialise the timeout structure
     timeout.tv_sec = 1; // ten second timeout
     timeout.tv_usec = 0;
 
     size_t cmd_size = strlen(cmd_str);
-    int i;
-    unsigned char c;
     for(i=0; i<cmd_size; i++)
     {
         if (i%2 == 1)
@@ -164,10 +164,11 @@ void parse_cmd(int fd, char* cmd_str)
 
 //    printf("Event: \n");
     //unsigned char buf[40];
-    unsigned char bc;
+    char bc;
     int event_started = 0;
     unsigned int cc = 0, event_code = 0;
-    unsigned int x = 0, len = 0;
+    unsigned int len = 0;
+    char x = '\0';
     //bzero(buf,40);
     i = 0;
     //sleep(1);
