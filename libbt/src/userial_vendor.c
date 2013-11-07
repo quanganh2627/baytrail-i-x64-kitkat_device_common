@@ -44,8 +44,6 @@
 **  Constants & Macros
 ******************************************************************************/
 
-#define VNDUSERIAL_DBG TRUE
-
 #ifndef VNDUSERIAL_DBG
 #define VNDUSERIAL_DBG TRUE
 #endif
@@ -307,24 +305,27 @@ void userial_vendor_set_baud(uint8_t userial_baud)
 *******************************************************************************/
 int userial_vendor_ioctl(userial_vendor_ioctl_op_t op, void *p_data)
 {
-    uint8_t* data;
+    uint8_t data = 0;
     if (p_data)
         data = *(uint8_t*) p_data;
     switch(op)
     {
         case USERIAL_OP_SET_DEVICE_STATE:
-            VNDUSERIALDBG("%s USERIAL_OP_SET_DEVICE_STATE: %d", __func__, \
-                                                                       data);
-            return ioctl(vnd_userial.fd, IMC_IDI_BT_SET_POWER_STATE, data);
+                VNDUSERIALDBG("%s USERIAL_OP_SET_DEVICE_STATE: %d", __func__, \
+                                                                           data);
+                return ioctl(vnd_userial.fd, IMC_IDI_BT_SET_POWER_STATE, data);
+            break;
         case USERIAL_OP_SET_BT_WAKE_UP:
             VNDUSERIALDBG("%s USERIAL_OP_SET_BT_WAKE_UP:%d", __func__, data);
             return ioctl(vnd_userial.fd, IMC_IDI_BT_SET_BT_WUP, data);
+            break;
         case USERIAL_OP_GET_CTS:
             VNDUSERIALDBG("%s USERIAL_OP_GET_CTS", __func__);
             return ioctl(vnd_userial.fd, IMC_IDI_BT_GET_CTS, NULL);
         case USERIAL_OP_SET_RTS:
             VNDUSERIALDBG("%s USERIAL_OP_SET_RTS:%d", __func__, data);
             return ioctl(vnd_userial.fd, IMC_IDI_BT_SET_RTS, data);
+            break;
         case USERIAL_OP_DISABLE_SIGNALING:
             VNDUSERIALDBG("%s USERIAL_OP_DISABLE_SIGNALING", __func__);
             return ioctl(vnd_userial.fd, IMC_IDI_BT_DISABLE_SIGNALING, data);
