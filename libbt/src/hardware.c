@@ -509,7 +509,6 @@ static uint8_t hw_config_findpatch(char *p_chip_id_str, char** p_patch_file)
                             ] != '/')
                             path_length++;
                         patch_filename = (char*) malloc (path_length * sizeof (char));
-
                         memset(patch_filename, 0, sizeof (patch_filename));
                         /* Found patchfile. Store location and name */
                         strcpy(patch_filename, fw_patchfile_path);
@@ -688,6 +687,7 @@ uint16_t form_word(uint8_t msb, uint8_t lsb)
 *******************************************************************************/
 static void hex_print(char* msg, unsigned char *a, unsigned int size)
 {
+    unsigned int i;
     if (a==NULL)
     {
         ALOGE("%s nothing to print.", __func__);
@@ -696,7 +696,6 @@ static void hex_print(char* msg, unsigned char *a, unsigned int size)
     if (!p)
         return;
     bzero(p, size + strlen(msg)+1+(size));
-    int i;
     sprintf (p,"%s%s:", p, msg);
     for (i=0;i<size;i++)
         sprintf (p, "%s %X", p, a[i]);
@@ -825,7 +824,6 @@ void hw_config_cback(void *p_mem)
                 is_proceeding = bt_vendor_cbacks->xmit_cb(HCI_INTEL_MANUFACTURE_MODE, \
                                                     HCI_COMMAND_CMPL_EVT_CODE, \
                                                     p_buf, hw_config_cback);
-
                 break;
 #if defined INTEL_AG6XX_UART
             case HW_CFG_BDDATA:
@@ -842,10 +840,9 @@ void hw_config_cback(void *p_mem)
                     is_proceeding = bt_vendor_cbacks->xmit_cb(HCI_INTEL_INF_BDDATA, \
                                                     HCI_INTEL_WRITE_BD_DATA_CMPL, \
                                                     p_buf, hw_config_cback);
-
-                } else
+                }
+                else
                 {
-                    //FIXME should turn off manufacture mode and gracefully fail
                     ALOGE("open_bddata FAILED.");
                     bt_vendor_cbacks->fwcfg_cb(BT_VND_OP_RESULT_FAIL);
                 }
@@ -876,8 +873,8 @@ void hw_config_cback(void *p_mem)
                 BTHWDBG("HW_CFG_SW_FIND_PATCH");
                 //Find the patch. and open the patch file
                 char* p_patch_file = NULL;
-                uint8_t* temp = (uint8_t*)(p_evt_buf + 1);
-                uint8_t fw_patch_name[FW_PATCHFILE_PATH_MAXLEN];
+                char* temp = (char*)(p_evt_buf + 1);
+                char fw_patch_name[FW_PATCHFILE_PATH_MAXLEN];
                 bzero(fw_patch_name, FW_PATCHFILE_PATH_MAXLEN);
 #if defined INTEL_AG6XX_UART
                 uint8_t hw_variant = temp[HCI_EVT_READ_HW_VARIANT];
@@ -885,7 +882,7 @@ void hw_config_cback(void *p_mem)
                 uint16_t dev_id = (hw_variant<<8) | (hw_revision<<0);
                 BTHWDBG("hw_varient:0x%x hw_revision:0x%x Device id:0x%x", hw_variant, hw_revision,dev_id);
                 /* AG620 file name should be a00.pbn unless specified in conf file */
-                sprintf(fw_patch_name, "%x\0", dev_id);
+                sprintf(fw_patch_name, "%x%c", dev_id, '\0');
 #endif
 #if defined INTEL_WP2_USB
                 sprintf(fw_patch_name, "%02x%02x%02x%02x%02x%02x%02x%02x%02x\0", temp[6], temp[7],
@@ -993,9 +990,9 @@ void hw_config_cback(void *p_mem)
                         fw_patchfile_empty = 1;
                         hw_cfg_cb.state = HW_CFG_MEMWRITE;
 
-                        is_proceeding = bt_vendor_cbacks->xmit_cb(opcode,
-                HCI_COMMAND_CMPL_EVT_CODE,\
-                            p_buf, hw_config_cback);
+                        is_proceeding = bt_vendor_cbacks->xmit_cb(opcode,\
+                                        HCI_COMMAND_CMPL_EVT_CODE,\
+                                        p_buf, hw_config_cback);
                     }
                     break;
                 }
@@ -1074,7 +1071,6 @@ void hw_config_cback(void *p_mem)
                             free(pData);
                         }
                         //BTHWDBG("param_length:%u", param_length);
-
                         p_buf->len = HCI_CMD_PREAMBLE_SIZE + \
                                      param_length;
 
@@ -1137,10 +1133,10 @@ HW_CFG_MANUFACTURE_OFF:
                 bt_vendor_cbacks->fwcfg_cb(BT_VND_OP_RESULT_SUCCESS);
                 hw_cfg_cb.state = 0;
 
-                if (hw_cfg_cb.fw_fd != -1)
+                if (hw_cfg_cb.fw_fd != NULL)
                 {
                     fclose(hw_cfg_cb.fw_fd);
-                    hw_cfg_cb.fw_fd = -1;
+                    hw_cfg_cb.fw_fd = NULL;
                 }
 
                 is_proceeding = TRUE;
@@ -1169,10 +1165,10 @@ HW_CFG_MANUFACTURE_OFF:
             bt_vendor_cbacks->fwcfg_cb(BT_VND_OP_RESULT_FAIL);
         }
 
-        if (hw_cfg_cb.fw_fd != -1)
+        if (hw_cfg_cb.fw_fd != NULL)
         {
-            close(hw_cfg_cb.fw_fd);
-            hw_cfg_cb.fw_fd = -1;
+            fclose(hw_cfg_cb.fw_fd);
+            hw_cfg_cb.fw_fd = NULL;
         }
 
         hw_cfg_cb.state = 0;

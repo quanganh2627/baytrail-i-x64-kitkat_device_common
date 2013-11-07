@@ -159,7 +159,6 @@ static const char* dump_vendor_op(bt_vendor_opcode_t opcode)
         CASE_RETURN_STR(BT_VND_OP_LPM_SET_BT_WAKE_STATE);
         CASE_RETURN_STR(BT_VND_OP_LPM_GET_CTS_STATE);
         CASE_RETURN_STR(BT_VND_OP_LPM_SET_RTS_STATE);
-
         default:
             return "unknown opcode";
     }
@@ -281,7 +280,6 @@ static int op(bt_vendor_opcode_t opcode, void *param)
                         if(bt_vendor_cbacks)
                             bt_vendor_cbacks->lpm_cb(BT_VND_OP_RESULT_FAIL);
                     }
-
                 }
                 else
                 {

@@ -100,7 +100,7 @@ typedef struct
     pthread_t     netlink_thread;
     pthread_mutex_t mutex;
     pthread_cond_t  cond;
-    unsigned int netlink_fd;
+    int netlink_fd;
     unsigned int  CTS_state;
 } bt_netlink_cb_t;
 
@@ -437,10 +437,8 @@ int upio_create_netlink_socket()
         UPIODBG("%s: sock_fd < 0 %d\n", __func__, errno);
         return -1;
     }
-
     /* Init the Netlink struct */
     memset(&src_addr, 0, sizeof(src_addr));
-
     /* Set up a Netlink using our own Process ID */
     src_addr.nl_family = AF_NETLINK;
     src_addr.nl_pid = getpid();
@@ -463,7 +461,6 @@ int upio_create_netlink_socket()
 *******************************************************************************/
 void upio_netlink_send_msg()
 {
-
     UPIODBG("--->%s..", __FUNCTION__);
     /* Init the destination Netlink struct */
     memset(&dest_addr, 0, sizeof(dest_addr));
@@ -548,7 +545,6 @@ void *thread_function(void *p_state)
 *******************************************************************************/
 void * upio_netlink_receive_message(void *ptr)
 {
-
     int signal;
     struct pollfd fds[1];
     int n;
@@ -571,7 +567,6 @@ void * upio_netlink_receive_message(void *ptr)
     fds[0].fd = netlink_cb.netlink_fd;
     fds[0].events = POLLIN | POLLERR | POLLRDNORM;
 
-
     while(TRUE)
     {
         n = poll(fds, 1, POLL_TIMEOUT);
@@ -587,7 +582,6 @@ void * upio_netlink_receive_message(void *ptr)
             ALOGE("Netlink thread exiting ");
             return NULL;
         }
-
         if( recvmsg(netlink_cb.netlink_fd, &msg, 0) < 0 )
         {
             ALOGE("%s: recvmsg() failed [errno=%u]\n", __func__, errno);

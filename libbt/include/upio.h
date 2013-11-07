@@ -184,6 +184,17 @@ void * upio_netlink_receive_message(void *ptr);
 **
 *******************************************************************************/
 void upio_close_netlink_socket();
+
+/*******************************************************************************
+**
+** Function       upio_netlink_listen_thread
+**
+** Description    start a thread to listen netlink packets from kernel
+**
+** Returns        None
+**
+*******************************************************************************/
+int upio_netlink_listen_thread(void);
 #endif
 #endif /* UPIO_H */
 
