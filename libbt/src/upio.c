@@ -524,7 +524,7 @@ int upio_netlink_listen_thread(void)
 
 pthread_mutex_t mutex1 = PTHREAD_MUTEX_INITIALIZER;
 
-void *thread_function(void *p_state)
+void *handle_host_wake(void *p_state)
 {
     int state = *((int*) p_state);
     pthread_mutex_lock( &mutex1 );
@@ -577,6 +577,9 @@ void * upio_netlink_receive_message(void *ptr)
             return NULL;
         }
 
+        if (n == 0)
+            continue;
+
         if(n < 0)
         {
             ALOGE("Netlink thread exiting ");
@@ -604,12 +607,12 @@ void * upio_netlink_receive_message(void *ptr)
                 case HWUP_HIGH:
                     host_wake_state = HIGH;
                     UPIODBG("%s host_wake_state:%d", __func__, host_wake_state);
-                    pthread_create(&thread_id, NULL, thread_function, (void*)&host_wake_state);
+                    handle_host_wake((void*)&host_wake_state);
                 break;
                 case HWUP_LOW:
                     host_wake_state = LOW;
                     UPIODBG("%s host_wake_state:%d", __func__, host_wake_state);
-                    pthread_create(&thread_id, NULL, thread_function, (void*)&host_wake_state);
+                    handle_host_wake((void*)&host_wake_state);
                 break;
                 case CTS_LOW:
                     {

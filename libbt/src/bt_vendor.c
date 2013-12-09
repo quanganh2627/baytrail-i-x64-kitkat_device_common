@@ -70,6 +70,7 @@ extern uint8_t fw_cfg_reg_value;
 
 bt_vendor_callbacks_t *bt_vendor_cbacks = NULL;
 uint8_t vnd_local_bd_addr[6]={0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+uint8_t lpm_set_status;
 
 /******************************************************************************
 **  Local type definitions
@@ -272,13 +273,23 @@ static int op(bt_vendor_opcode_t opcode, void *param)
                     if(netlinkfd > 0)
                     {
                         upio_netlink_send_msg();
-                        int status = upio_netlink_listen_thread();
-                        if(bt_vendor_cbacks && (status == 0))
+                        if (upio_netlink_listen_thread() < 0)
+                        {
+                            lpm_set_status = FALSE;
+                            retval = -1;
+                        }
+                        else
+                        {
+                            lpm_set_status = TRUE;
+                            retval = 0;
+                        }
+                        /*if(bt_vendor_cbacks && (status == 0))
                             bt_vendor_cbacks->lpm_cb(BT_VND_OP_RESULT_SUCCESS);
                     }else
                     {
                         if(bt_vendor_cbacks)
                             bt_vendor_cbacks->lpm_cb(BT_VND_OP_RESULT_FAIL);
+                        */
                     }
                 }
                 else
