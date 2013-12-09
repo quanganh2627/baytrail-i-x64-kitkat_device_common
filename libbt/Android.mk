@@ -60,6 +60,10 @@ LOCAL_SHARED_LIBRARIES := \
         libcutils \
         liblog
 
+ifneq ($(BOARD_SUPPORTS_NVM), false)
+LOCAL_CFLAGS += -DBT_USE_NVM
+endif
+
 LOCAL_MODULE := libbt-vendor
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES
