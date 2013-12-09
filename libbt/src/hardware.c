@@ -68,7 +68,11 @@
 
 #if defined INTEL_AG6XX_UART
 #define FW_PATCHFILE_EXTENSION      ".pbn"
+#ifdef BT_USE_NVM
 #define BDDATA_FILE                 "/nvm_fs_partition/bluetooth/bddata"
+#else
+#define BDDATA_FILE                 "/system/etc/bluetooth/bddata"
+#endif
 #else
 #define FW_PATCHFILE_EXTENSION      ".seq"
 #endif
@@ -191,11 +195,12 @@ uint8_t fw_cfg_reg_value = 0xff;
 **  Externs
 ******************************************************************************/
 
-void hw_config_cback(void *p_evt_buf);
+extern uint8_t lpm_set_status;
 
 /******************************************************************************
-**  Static variables
+**  Static variables and functions
 ******************************************************************************/
+void hw_config_cback(void *p_evt_buf);
 #if defined INTEL_WP2_USB
 static int fw_patchfile_empty = 0;
 #endif
@@ -588,6 +593,7 @@ int open_bddata(uint8_t *p)
     size_t cmd_size;
 
     BTHWDBG("%s",__func__);
+#ifdef BT_USE_NVM
     if (strlen(bd_datafile_name) > 0)
     {
         BTHWDBG("BD Data File Name from Config File: %s", bd_datafile_name);
@@ -597,6 +603,9 @@ int open_bddata(uint8_t *p)
     {
         fp = fopen(BDDATA_FILE, "rb");
     }
+#else
+    fp = fopen(BDDATA_FILE, "rb");
+#endif
 
     if (fp == NULL)
     {
@@ -1130,7 +1139,12 @@ HW_CFG_MANUFACTURE_OFF:
                 if ( buf[2] != HCI_INTEL_STARTUP)
                     break;
                 //Report the fw download success
-                bt_vendor_cbacks->fwcfg_cb(BT_VND_OP_RESULT_SUCCESS);
+                if(bt_vendor_cbacks)
+                {
+                    if (lpm_set_status == TRUE)
+                        bt_vendor_cbacks->lpm_cb(BT_VND_OP_RESULT_SUCCESS);
+                    bt_vendor_cbacks->fwcfg_cb(BT_VND_OP_RESULT_SUCCESS);
+                }
                 hw_cfg_cb.state = 0;
 
                 if (hw_cfg_cb.fw_fd != NULL)
