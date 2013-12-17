@@ -208,6 +208,7 @@ static char fw_patchfile_path[256] = FW_PATCHFILE_LOCATION;
 static char fw_patchfile_name[128] = { 0 };
 static char bd_datafile_name[128] = { 0 };
 uint8_t signaling_is_enabled = TRUE;
+uint8_t lpm_is_enabled = TRUE;
 #if (VENDOR_LIB_RUNTIME_TUNING_ENABLED == TRUE)
 static int fw_patch_settlement_delay = -1;
 #endif
@@ -1342,7 +1343,7 @@ int hw_set_patch_file_path(char *p_conf_name, char *p_conf_value, int param)
 **
 ** Function        hw_is_signaling_enabled
 **
-** Description     Sets if lpm is enabled
+** Description     Sets if signaling is enabled
 **
 ** Returns         0 : Success
 **                 Otherwise : Fail
@@ -1358,6 +1359,30 @@ int hw_is_signaling_enabled(char *p_conf_name, char *p_conf_value, int param)
     else if (strcmp(p_conf_value, "false") == 0)
     {
         signaling_is_enabled = FALSE;
+    }
+    return 0;
+}
+
+/*******************************************************************************
+**
+** Function        hw_is_lpm_enabled
+**
+** Description     Sets if lpm is enabled
+**
+** Returns         0 : Success
+**                 Otherwise : Fail
+**
+*******************************************************************************/
+int hw_is_lpm_enabled(char *p_conf_name, char *p_conf_value, int param)
+{
+    BTHWDBG("%s conf_value:%s", __func__, p_conf_value);
+    if (strcmp(p_conf_value, "true") == 0)
+    {
+        lpm_is_enabled = TRUE;
+    }
+    else if (strcmp(p_conf_value, "false") == 0)
+    {
+        lpm_is_enabled = FALSE;
     }
     return 0;
 }
