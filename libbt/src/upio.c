@@ -58,6 +58,13 @@
 #endif
 
 /******************************************************************************
+**  Externs
+******************************************************************************/
+
+extern pthread_mutex_t netlink_listen_start_mutex;
+extern pthread_cond_t  netlink_listen_start_cond_var;
+
+/******************************************************************************
 **  Local type definitions
 ******************************************************************************/
 
@@ -505,10 +512,9 @@ void upio_netlink_send_msg()
 *******************************************************************************/
 int upio_netlink_listen_thread(void)
 {
-    pthread_t recvmsgid;
     int status;
     UPIODBG("--->%s..", __FUNCTION__);
-    status = pthread_create( &recvmsgid, NULL, upio_netlink_receive_message, NULL);
+    status = pthread_create(&netlink_cb.netlink_thread, NULL, upio_netlink_receive_message, NULL);
     if(status == 0)
     {
         netlink_running = TRUE;
@@ -567,6 +573,10 @@ void * upio_netlink_receive_message(void *ptr)
     fds[0].fd = netlink_cb.netlink_fd;
     fds[0].events = POLLIN | POLLERR | POLLRDNORM;
 
+    pthread_mutex_lock(&netlink_listen_start_mutex);
+        pthread_cond_signal(&netlink_listen_start_cond_var);
+    pthread_mutex_unlock(&netlink_listen_start_mutex);
+
     while(TRUE)
     {
         n = poll(fds, 1, POLL_TIMEOUT);
@@ -582,7 +592,8 @@ void * upio_netlink_receive_message(void *ptr)
 
         if(n < 0)
         {
-            ALOGE("Netlink thread exiting ");
+            ALOGE("Netlink thread exiting: %s", strerror(errno));
+            close(netlink_cb.netlink_fd);
             return NULL;
         }
         if( recvmsg(netlink_cb.netlink_fd, &msg, 0) < 0 )
@@ -642,6 +653,7 @@ void upio_close_netlink_socket()
     /* Cleanup the socket */
     UPIODBG("--->%s..", __FUNCTION__);
     netlink_running = FALSE;
+    pthread_join(netlink_cb.netlink_thread, NULL);
 }
 #endif
 

@@ -41,6 +41,7 @@ int hw_set_patch_file_path(char *p_conf_name, char *p_conf_value, int param);
 int hw_set_patch_file_name(char *p_conf_name, char *p_conf_value, int param);
 int hw_set_bddata_file_name(char *p_conf_name, char *p_conf_value, int param);
 int hw_is_signaling_enabled(char *p_conf_name, char *p_conf_value, int param);
+int hw_is_lpm_enabled(char *p_conf_name, char *p_conf_value, int param);
 int hw_read_idle_timeout(char *p_conf_name, char *p_conf_value, int param);
 int hw_read_pkt_rate_monitor_period(char *p_conf_name, char *p_conf_value, int param);
 int hw_read_pkt_rate_monitor_threshold(char *p_conf_name, char *p_conf_value, int param);
@@ -84,6 +85,7 @@ static const conf_entry_t conf_table[] = {
     {"FwPatchFileName", hw_set_patch_file_name, 0},
     {"BDDataFileLocation", hw_set_bddata_file_name, 0},
     {"SignalingEnabled", hw_is_signaling_enabled, 0},
+    {"LpmEnabled", hw_is_lpm_enabled, 0},
     {"IdleTimeout", hw_read_idle_timeout, 0},
     {"PacketRateMonitorPeriod", hw_read_pkt_rate_monitor_period, 0},
     {"PacketRateMonitorThreshold", hw_read_pkt_rate_monitor_threshold, 0},
