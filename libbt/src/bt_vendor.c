@@ -62,6 +62,7 @@ void hw_epilog_process(void);
 #endif
 
 extern uint8_t signaling_is_enabled;
+extern uint8_t lpm_is_enabled;
 extern uint8_t fw_cfg_reg_value;
 
 /******************************************************************************
@@ -71,6 +72,8 @@ extern uint8_t fw_cfg_reg_value;
 bt_vendor_callbacks_t *bt_vendor_cbacks = NULL;
 uint8_t vnd_local_bd_addr[6]={0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 uint8_t lpm_set_status;
+pthread_mutex_t netlink_listen_start_mutex     = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t  netlink_listen_start_cond_var   = PTHREAD_COND_INITIALIZER;
 
 /******************************************************************************
 **  Local type definitions
@@ -280,6 +283,9 @@ static int op(bt_vendor_opcode_t opcode, void *param)
                         }
                         else
                         {
+                            pthread_mutex_lock(&netlink_listen_start_mutex);
+                                pthread_cond_wait(&netlink_listen_start_cond_var, &netlink_listen_start_mutex);
+                            pthread_mutex_unlock(&netlink_listen_start_mutex);
                             lpm_set_status = TRUE;
                             retval = 0;
                         }
@@ -298,6 +304,7 @@ static int op(bt_vendor_opcode_t opcode, void *param)
                     {
                         device_state = 5;
                         upio_set_d_state(device_state);
+                        break;
                     }
                     upio_close_netlink_socket();
                 }
@@ -317,7 +324,9 @@ static int op(bt_vendor_opcode_t opcode, void *param)
         case BT_VND_OP_LPM_SET_DEVICE_STATE:
             {
                 uint8_t state = *(uint8_t*) param;
-                upio_set_d_state(state);
+                /* If LPM is disabled, only allow D0 and D3 states */
+                if (!((!lpm_is_enabled) && (state != 0) && (state != 5)))
+                    upio_set_d_state(state);
             }
             break;
 
