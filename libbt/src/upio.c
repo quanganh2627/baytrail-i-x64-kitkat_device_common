@@ -479,6 +479,7 @@ void upio_netlink_send_msg()
 
     /* Allocate memory for the Netlink message struct */
     nlh = (struct nlmsghdr *)malloc(NLMSG_SPACE(MAX_PAYLOAD));
+    if(!nlh)return;
     memset(nlh, 0, NLMSG_SPACE(MAX_PAYLOAD));
     nlh->nlmsg_len = NLMSG_SPACE(MAX_PAYLOAD);
     nlh->nlmsg_pid = getpid();
@@ -560,6 +561,7 @@ void * upio_netlink_receive_message(void *ptr)
     /* Allocate memory for the Netlink message struct */
     nlh = (struct nlmsghdr *)malloc(NLMSG_SPACE(MAX_PAYLOAD));
     memset(nlh, 0, NLMSG_SPACE(MAX_PAYLOAD));
+    if(!nlh)return NULL;
     nlh->nlmsg_len = NLMSG_SPACE(MAX_PAYLOAD);
     nlh->nlmsg_pid = getpid();
     nlh->nlmsg_flags = 0;
