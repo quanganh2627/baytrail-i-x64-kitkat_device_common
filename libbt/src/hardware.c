@@ -515,6 +515,7 @@ static uint8_t hw_config_findpatch(char *p_chip_id_str, char** p_patch_file)
                             ] != '/')
                             path_length++;
                         patch_filename = (char*) malloc (path_length * sizeof (char));
+                        if(!patch_filename) goto FIND_PATCH_EXIT;
                         memset(patch_filename, 0, sizeof (patch_filename));
                         /* Found patchfile. Store location and name */
                         strcpy(patch_filename, fw_patchfile_path);
@@ -534,7 +535,7 @@ static uint8_t hw_config_findpatch(char *p_chip_id_str, char** p_patch_file)
                 }
             }
         }
-
+FIND_PATCH_EXIT:
         closedir(dirp);
 
         if (retval == FALSE)
@@ -618,6 +619,7 @@ int open_bddata(uint8_t *p)
     if (line == NULL)
     {
         ALOGE("Malloc failure");
+        fclose(fp);
         return FAILURE;
     }
     read = fread(line, sizeof(unsigned char), 1024, fp);
@@ -625,6 +627,7 @@ int open_bddata(uint8_t *p)
     {
         ALOGE("line is not read properly. read:%d errno:%d strerror:%s", read, errno, strerror(errno));
         free(line);
+        fclose(fp);
         return FAILURE;
     }
     line[read] = '\0';
@@ -701,6 +704,7 @@ static void hex_print(char* msg, unsigned char *a, unsigned int size)
     if (a==NULL)
     {
         ALOGE("%s nothing to print.", __func__);
+        return;
     }
     char *p = (char*) malloc (sizeof (char) * ((size*3) + strlen(msg)+1));
     if (!p)
@@ -902,6 +906,11 @@ void hw_config_cback(void *p_mem)
                 //BTHWDBG("FW patch file name constructed:%s",fw_patch_name);
                 if (hw_config_findpatch(fw_patch_name, &p_patch_file) == TRUE)
                 {
+                    if(!p_patch_file){
+                        BTHWDBG("Patch file not found");
+                        hw_cfg_cb.state = HW_CFG_MANUFACTURE_OFF;
+                        goto HW_CFG_MANUFACTURE_OFF;
+                    }
                     //Open the patch file
                     BTHWDBG("Open patch file:%s",p_patch_file);
                     if ((hw_cfg_cb.fw_fd = fopen(p_patch_file, "rb")) == NULL) {
@@ -1056,6 +1065,11 @@ void hw_config_cback(void *p_mem)
                 {
                     uint8_t data_length = (hw_cfg_cb.nr_of_bytes > PATCH_MAX_LENGTH) ?PATCH_MAX_LENGTH:hw_cfg_cb.nr_of_bytes;
                     pData = (unsigned char *) malloc(data_length);
+                    if(!pData)
+                    {
+                        hw_cfg_cb.state = HW_CFG_MANUFACTURE_OFF;
+                        goto HW_CFG_MANUFACTURE_OFF;
+                    }
                     read = fread(pData, data_length, sizeof(unsigned char), hw_cfg_cb.fw_fd);
                     if(!read)
                     {
@@ -1079,6 +1093,7 @@ void hw_config_cback(void *p_mem)
                         if (pData!=NULL)
                         {
                             free(pData);
+                            pData = NULL;
                         }
                         //BTHWDBG("param_length:%u", param_length);
                         p_buf->len = HCI_CMD_PREAMBLE_SIZE + \
@@ -1164,11 +1179,14 @@ HW_CFG_MANUFACTURE_OFF:
                 break;
         } // switch(hw_cfg_cb.state)
     } // if (p_buf != NULL)
-
     /* Free the RX event buffer */
     if (bt_vendor_cbacks)
         bt_vendor_cbacks->dealloc(p_evt_buf);
-
+    if(pData)
+    {
+        free(pData);
+        pData = NULL;
+    }
     if (is_proceeding == FALSE)
     {
         ALOGE("vendor lib fwcfg aborted!!!");
