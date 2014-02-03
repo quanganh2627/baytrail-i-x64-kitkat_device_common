@@ -164,7 +164,7 @@ void parse_cmd(int fd, char* cmd_str)
 
 //    printf("Event: \n");
     //unsigned char buf[40];
-    char bc;
+    char bc[2]={'\0'};
     int event_started = 0;
     unsigned int cc = 0, event_code = 0;
     unsigned int len = 0;
@@ -174,13 +174,13 @@ void parse_cmd(int fd, char* cmd_str)
     //sleep(1);
     do{
         //n = read(fd, &buf[i], 1);
-        n = read(fd, &bc, 1);
+        n = read(fd, bc, 1);
         //val = atoi(&buf[i]);
-        sscanf(&bc, "%c", &x);
+        sscanf(&bc[0], "%c", &x);
 
         if (x == 4 && event_started == 0)
         {
-            printf("\n\t>> %x ",bc);
+            printf("\n\t>> %x ",bc[0]);
             event_started = 1;
             cc = 0;
         }
@@ -195,15 +195,15 @@ void parse_cmd(int fd, char* cmd_str)
                     printf ("Debug Startup event\n");
                     break;
                 }
-                printf (" %x ", bc); //Event code
+                printf (" %x ", bc[0]); //Event code
             }
             else if (cc == 2)
             {
-                printf(" %x ",bc);
+                printf(" %x ",bc[0]);
                 len = x;
             }
             else if (cc >= 2) {
-                printf(" %x ", bc);
+                printf(" %x ", bc[0]);
                 len--;
             }
 
