@@ -363,9 +363,9 @@ int upio_set_bluetooth_power(int on)
 ** Returns         None
 **
 *******************************************************************************/
-void upio_set_d_state(uint8_t state)
+int upio_set_d_state(uint8_t state)
 {
-    userial_vendor_ioctl(USERIAL_OP_SET_DEVICE_STATE, &state);
+   return userial_vendor_ioctl(USERIAL_OP_SET_DEVICE_STATE, &state);
 }
 
 /*******************************************************************************
@@ -575,8 +575,6 @@ void * upio_netlink_receive_message(void *ptr)
     fds[0].fd = netlink_cb.netlink_fd;
     fds[0].events = POLLIN | POLLERR | POLLRDNORM;
 
-    pthread_mutex_lock(&netlink_listen_start_mutex);
-        pthread_cond_signal(&netlink_listen_start_cond_var);
     pthread_mutex_unlock(&netlink_listen_start_mutex);
 
     while(TRUE)
