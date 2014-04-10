@@ -106,7 +106,7 @@ int upio_set_bluetooth_power(int on);
 ** Returns         None
 **
 *******************************************************************************/
-void upio_set_d_state(uint8_t state);
+int upio_set_d_state(uint8_t state);
 
 /*******************************************************************************
 **

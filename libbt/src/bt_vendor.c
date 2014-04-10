@@ -276,15 +276,16 @@ static int op(bt_vendor_opcode_t opcode, void *param)
                     if(netlinkfd > 0)
                     {
                         upio_netlink_send_msg();
+                        pthread_mutex_lock(&netlink_listen_start_mutex);
                         if (upio_netlink_listen_thread() < 0)
                         {
+                            pthread_mutex_unlock(&netlink_listen_start_mutex);
                             lpm_set_status = FALSE;
                             retval = -1;
                         }
                         else
                         {
                             pthread_mutex_lock(&netlink_listen_start_mutex);
-                                pthread_cond_wait(&netlink_listen_start_cond_var, &netlink_listen_start_mutex);
                             pthread_mutex_unlock(&netlink_listen_start_mutex);
                             lpm_set_status = TRUE;
                             retval = 0;
@@ -326,7 +327,7 @@ static int op(bt_vendor_opcode_t opcode, void *param)
                 uint8_t state = *(uint8_t*) param;
                 /* If LPM is disabled, only allow D0 and D3 states */
                 if (!((!lpm_is_enabled) && (state != 0) && (state != 5)))
-                    upio_set_d_state(state);
+                    retval = upio_set_d_state(state);
             }
             break;
 
