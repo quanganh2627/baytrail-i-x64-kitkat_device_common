@@ -1,6 +1,6 @@
 intermediates := $(local-intermediates-dir)
 
-SRC := $(call my-dir)/include/$(addprefix vnd_, $(addsuffix .txt,$(basename $(TARGET_DEVICE))))
+SRC := $(call my-dir)/include/$(addprefix vnd_, $(addsuffix .txt,$(basename $(firstword $(subst _, ,$(TARGET_DEVICE))))))
 ifeq (,$(wildcard $(SRC)))
 # configuration file does not exist. Use default one
 SRC := $(call my-dir)/include/vnd_generic.txt
