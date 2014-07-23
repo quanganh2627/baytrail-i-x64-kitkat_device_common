@@ -32,11 +32,8 @@
 #define IMC_IDI_BT_GET_RTS _IOR(IMC_IDI_MAGIC, 5, unsigned long)
 /* Gets CTS status */
 #define IMC_IDI_BT_GET_CTS _IOR(IMC_IDI_MAGIC, 6, unsigned long)
-#define IMC_IDI_BT_SET_TEMP_MEAS _IOW(IMC_IDI_MAGIC, 7, unsigned long)
-#define IMC_IDI_BT_GET_TEMP_MEAS _IOR(IMC_IDI_MAGIC, 8, unsigned long)
-#define IMC_IDI_BT_GET_TEMP_MEAS _IOR(IMC_IDI_MAGIC, 8, unsigned long)
-#define IMC_IDI_BT_DISABLE_SIGNALING _IO(IMC_IDI_MAGIC, 9)
-#define IMC_IDI_BT_SET_SCU_FWCTL _IOW(IMC_IDI_MAGIC, 10, unsigned long)
-#define IMC_IDI_BT_GET_SCU_FWCTL _IOR(IMC_IDI_MAGIC, 11, unsigned long)
-
+#define IMC_IDI_BT_DISABLE_SIGNALING _IO(IMC_IDI_MAGIC, 7)
+#define IMC_IDI_BT_SET_SCU_FWCTL _IOW(IMC_IDI_MAGIC, 8, unsigned long)
+#define IMC_IDI_BT_GET_SCU_FWCTL _IOR(IMC_IDI_MAGIC, 9, unsigned long)
+#define IMC_IDI_BT_CONFIG_EXT_UART _IOR(IMC_IDI_MAGIC, 10, unsigned long)
 #endif
