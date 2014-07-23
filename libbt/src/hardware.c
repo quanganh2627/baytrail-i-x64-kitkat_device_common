@@ -54,7 +54,6 @@
 **  Constants & Macros
 ******************************************************************************/
 
-#define BTHW_DBG TRUE
 
 #ifndef BTHW_DBG
 #define BTHW_DBG FALSE
