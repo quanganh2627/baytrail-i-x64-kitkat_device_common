@@ -23,6 +23,7 @@
 #include <time.h>   // time calls
 #include <stdlib.h>
 #include <sys/ioctl.h>
+#include "imc_idi_bt_ioctl.h"
 
 int open_ftdi_port(char* device, char* speed)
 {
@@ -153,7 +154,7 @@ void parse_cmd(int fd, char* cmd_str)
         if (i%2 == 1)
         {
             c |= char_to_hex(cmd_str[i]);
-            printf(" %x ",c);
+            printf(" %02x",c);
             write(fd, &c, 1);
         }
         else
@@ -180,7 +181,7 @@ void parse_cmd(int fd, char* cmd_str)
 
         if (x == 4 && event_started == 0)
         {
-            printf("\n\t>> %x ",bc[0]);
+            printf("\n\t>> %02x",bc[0]);
             event_started = 1;
             cc = 0;
         }
@@ -190,20 +191,20 @@ void parse_cmd(int fd, char* cmd_str)
             if (cc == 1)
             {
                 event_code = x;
-                if (x == 15) //Debug stratup event. Skip this event
-                {
-                    printf ("Debug Startup event\n");
-                    break;
-                }
-                printf (" %x ", bc[0]); //Event code
+                //if (x == 15) //Debug startup event. Skip this event
+                //{
+                    //printf (" Debug Startup event\n");
+                    //break;
+                //}
+                printf (" %02x", bc[0]); //Event code
             }
             else if (cc == 2)
             {
-                printf(" %x ",bc[0]);
+                printf(" %02x",bc[0]);
                 len = x;
             }
             else if (cc >= 2) {
-                printf(" %x ", bc[0]);
+                printf(" %02x", bc[0]);
                 len--;
             }
 
@@ -215,6 +216,8 @@ void parse_cmd(int fd, char* cmd_str)
 
     if (event_code == 14)
         printf (" (Command complete)\n");
+    else
+        printf ("\n");
     // check if an error has occured
     if(n < 0)
     {
@@ -272,6 +275,8 @@ int main(int argc, char* argv[])
          if(fd == -1)
         {
             fd = open_ftdi_port(argv[1],argv[3]);
+            ioctl(fd, IMC_IDI_BT_DISABLE_SIGNALING, 0);
+            ioctl(fd, IMC_IDI_BT_SET_POWER_STATE, 0);
             printf("FILE:%s\n",argv[2]);
             open_file(fd, argv[2]);
         }
@@ -280,7 +285,10 @@ int main(int argc, char* argv[])
         printf(">>> Invalid args. Usage: exe <serial_port> <file_name> <speed> <<< \n");
 
     if(fd != -1)
-      close(fd);
+    {
+        ioctl(fd, IMC_IDI_BT_SET_POWER_STATE, 5);
+        close(fd);
+    }
 
     return(0);
 
