@@ -267,7 +267,7 @@ void userial_vendor_close(void)
 #endif
 
     ALOGI("device fd = %d close", vnd_userial.fd);
-
+    tcflush(vnd_userial.fd, TCIOFLUSH);
     if ((result = close(vnd_userial.fd)) < 0)
         ALOGE( "close(fd:%d) FAILED result:%d", vnd_userial.fd, result);
 
